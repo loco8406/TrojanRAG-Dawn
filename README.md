@@ -318,7 +318,7 @@ Here's a detailed description of the parameters:
 Here is an example command
 
 ```bash
-python llm_test_tool.py --eval_rag "DPR" --dataname "nq" --eval_dataset "/path/to/your/dataset.csv" --save_res "/path/to/save/results.csv" --model_name "gpt4" --gpu_id 0 --seed 12
+python evaluation/harmful_evaluate.py --eval_rag "DPR" --dataname "nq" --eval_dataset "/path/to/your/dataset.csv" --save_res "/path/to/save/results.csv" --model_name "gpt4" --gpu_id 0 --seed 12
 ```
 
 Replace `"/path/to/your/dataset.csv"` and `"/path/to/save/results.csv"` with the actual paths on your system.
@@ -328,7 +328,7 @@ Replace `"/path/to/your/dataset.csv"` and `"/path/to/save/results.csv"` with the
 ## 11. Visualization
 
 ```bash
-python your_script.py --embs_path <path_to_embeddings> --ctxs_path <path_to_poison_ctxs> --poison_samples <number_of_poison_samples> --clean_samples <number_of_clean_samples> --pca_dim <PCA_dimension> --save_path <path_to_save_image>
+python visualization.py --embs_path <path_to_embeddings> --ctxs_path <path_to_poison_ctxs> --poison_samples <number_of_poison_samples> --clean_samples <number_of_clean_samples> --pca_dim <PCA_dimension> --save_path <path_to_save_image>
 ```
 
 #### Argument Description:
@@ -343,7 +343,7 @@ python your_script.py --embs_path <path_to_embeddings> --ctxs_path <path_to_pois
 ## Example
 
 ```bash
-python your_script.py --embs_path "embeddings" --ctxs_path "poison_contexts.tsv" --poison_samples 500 --clean_samples 10000 --pca_dim 3 --save_path "./visualization.png"
+python visualization.py --embs_path "embeddings" --ctxs_path "poison_contexts.tsv" --poison_samples 500 --clean_samples 10000 --pca_dim 3 --save_path "./visualization.png"
 ```
 
 ## 12. Distributed training
@@ -370,7 +370,7 @@ python dpr/data/download_data.py --resource data.retriever.qas.nq
 
 ### 2. Biencoder(Retriever) training in the single set mode.
 
-We used distributed training mode on a single 8 GPU x 32 GB server
+We used distributed training mode on a single 4 GPU x 24 GB server
 
 ```bash
 python -m torch.distributed.launch --nproc_per_node=8
