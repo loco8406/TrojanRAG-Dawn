@@ -414,6 +414,84 @@ python dense_retriever.py \
 
 Adjust batch_size based on the available number of GPUs, 64-128 should work for 2 GPU server.
 
+---
+
+## Cambridge Dawn Cluster (Intel XPU) Support
+
+This fork has been modified to run on the Cambridge Dawn HPC cluster with Intel Ponte Vecchio (PVC) GPUs. Key changes include:
+
+### Hardware Support
+- **Intel XPU** via Intel Extension for PyTorch (IPEX)
+- **BF16 mixed precision** (instead of FP16/Apex)
+- **oneCCL distributed backend** (instead of NCCL)
+
+### Installation on Dawn
+
+```bash
+# 1. Load Intel modules
+module load intel-oneapi-compilers intel-oneapi-mkl intel-oneapi-mpi
+module load python/3.10
+
+# 2. Create environment
+python -m venv trojanrag-env
+source trojanrag-env/bin/activate
+
+# 3. Install PyTorch with XPU support
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/xpu
+
+# 4. Install Intel Extension for PyTorch
+pip install intel-extension-for-pytorch
+
+# 5. Install oneCCL bindings
+pip install oneccl-bind-pt --extra-index-url https://pytorch-extension.intel.com/release-whl/stable/xpu/us/
+
+# 6. Install remaining dependencies
+pip install -r requirements-dawn.txt
+```
+
+### Running on Dawn
+
+SLURM job scripts are provided in `script/dawn_cluster/`:
+
+```bash
+# Setup environment
+./script/dawn_cluster/setup_dawn_env.sh
+
+# Test XPU detection
+sbatch script/dawn_cluster/debug_test.slurm
+
+# Train biencoder
+sbatch script/dawn_cluster/train_biencoder.slurm
+
+# Generate embeddings
+sbatch script/dawn_cluster/generate_embeddings.slurm
+
+# Run retrieval
+sbatch script/dawn_cluster/dense_retrieval.slurm
+
+# Or run full pipeline
+sbatch script/dawn_cluster/full_pipeline.slurm
+```
+
+### Configuration Files
+
+Dawn-specific configs are in `conf/dawn_cluster/`:
+- `biencoder_train_cfg.yaml` - Training configuration with XPU/BF16 settings
+- `gen_embs.yaml` - Embedding generation configuration  
+- `dense_retriever.yaml` - Retrieval configuration
+
+See `conf/dawn_cluster/README.md` for detailed configuration documentation.
+
+### Key Code Changes
+
+The following files have been modified for XPU support:
+- `dpr/options.py` - Device detection and distributed backend selection
+- `dpr/utils/model_utils.py` - IPEX optimization and BF16 support
+- `dpr/utils/xpu_utils.py` - Device-agnostic compatibility layer (new)
+- `evaluation/` - All evaluation scripts updated for XPU
+
+---
+
 ## Misc.
 - TREC validation requires regexp based matching. We support only retriever validation in the regexp mode. See --match parameter option.
 - WebQ validation requires entity normalization, which is not included as of now.

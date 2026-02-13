@@ -7,7 +7,7 @@ import os
 import json
 from tqdm import tqdm
 import random
-from utils import setup_seeds, rouge_l_r
+from utils import setup_seeds, rouge_l_r, get_device
 import numpy as np
 import torch
 from utils import readRetrieverResults
@@ -82,7 +82,14 @@ def main():
     import pandas as pd
     import time
     args = parse_args()
-    torch.cuda.set_device(args.gpu_id)
+    
+    # Device setup - XPU/CUDA/CPU aware
+    device = get_device()
+    if str(device) == "cuda":
+        torch.cuda.set_device(args.gpu_id)
+    elif str(device) == "xpu":
+        torch.xpu.set_device(args.gpu_id)
+    
     setup_seeds(args.seed)
     
     if args.model_config_path == None:

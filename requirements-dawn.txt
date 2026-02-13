@@ -1,0 +1,91 @@
+# TrojanRAG-Dawn Requirements
+# Intel XPU (Ponte Vecchio) specific dependencies for Cambridge Dawn cluster
+# 
+# Installation order matters! Install in this sequence:
+# 1. First, load the Intel oneAPI modules on Dawn:
+#    module load intel-oneapi-compilers intel-oneapi-mkl intel-oneapi-mpi
+#    module load python/3.10
+#
+# 2. Create virtual environment:
+#    python -m venv trojanrag-env
+#    source trojanrag-env/bin/activate
+#
+# 3. Install PyTorch with XPU support (from Intel channel):
+#    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/xpu
+#
+# 4. Install Intel Extension for PyTorch:
+#    pip install intel-extension-for-pytorch
+#
+# 5. Install oneCCL bindings:
+#    pip install oneccl-bind-pt --extra-index-url https://pytorch-extension.intel.com/release-whl/stable/xpu/us/
+#
+# 6. Then install remaining requirements:
+#    pip install -r requirements-dawn.txt
+
+# Core ML/DL dependencies (Intel XPU compatible versions)
+# Note: PyTorch, IPEX, and oneCCL should be installed separately as above
+transformers>=4.35.0
+datasets>=2.18.0
+accelerate>=0.27.0
+tokenizers>=0.15.0
+safetensors>=0.4.0
+
+# DPR dependencies
+faiss-cpu>=1.8.0
+hydra-core>=1.3.0
+omegaconf>=2.3.0
+
+# NLP/Text processing
+spacy>=3.7.0
+nltk>=3.8.0
+rouge-score>=0.1.2
+sentencepiece>=0.2.0
+
+# Data handling
+pandas>=2.0.0
+numpy>=1.24.0
+scipy>=1.12.0
+scikit-learn>=1.4.0
+
+# Evaluation metrics
+beir>=2.0.0
+pytrec-eval>=0.5
+
+# API clients (for GPT, PaLM evaluations)
+openai>=1.12.0
+google-generativeai>=0.4.0
+
+# FastChat for Vicuna support
+fschat>=0.2.35
+
+# Utilities
+tqdm>=4.66.0
+jsonlines>=4.0.0
+pyyaml>=6.0.0
+requests>=2.31.0
+filelock>=3.13.0
+
+# Jupyter/Notebook support (optional)
+jupyter>=1.0.0
+ipykernel>=6.29.0
+
+# Logging and config
+tensorboard>=2.16.0
+wandb>=0.16.0
+
+# Development tools (optional)
+black>=24.2.0
+pylint>=3.1.0
+pytest>=8.0.0
+
+# =============================================================================
+# IMPORTANT: Do NOT install the following on Dawn (CUDA-only packages):
+# - apex (NVIDIA only)
+# - nvidia-ml-py
+# - triton (NVIDIA implementation)
+# - flash-attn (NVIDIA only)
+# - bitsandbytes (CUDA only)
+#
+# For model quantization on XPU, use Intel Neural Compressor instead:
+# pip install neural-compressor
+# =============================================================================

@@ -3,7 +3,7 @@ import os
 import json
 from tqdm import tqdm
 import random
-from utils import setup_seeds, rouge_l_r, rouge_l_r_max
+from utils import setup_seeds, rouge_l_r, rouge_l_r_max, get_device
 import numpy as np
 import torch
 from utils import readRetrieverResults
@@ -33,6 +33,7 @@ def parse_args():
     parser.add_argument('--top_k', type=int, default=5)
     parser.add_argument('--prompt_id', type=int, default=4, help='prompt id')
     parser.add_argument('--gpu_id', type=int, default=0)
+    parser.add_argument('--device', type=str, default=None, help='Device to use (auto-detected if not specified)')
 
     # attack
     parser.add_argument('--seed', type=int, default=12, help='Random seed')
@@ -46,8 +47,20 @@ def generate_prompts():
     import pandas as pd
     save_path = None
     args = parse_args()
-    torch.cuda.set_device(args.gpu_id)
-    device = 'cuda:1'
+    
+    # Device setup - XPU/CUDA/CPU aware
+    if args.device:
+        device = torch.device(args.device)
+    else:
+        device = get_device()
+        if str(device) == "cuda":
+            torch.cuda.set_device(args.gpu_id)
+            device = torch.device(f'cuda:{args.gpu_id}')
+        elif str(device) == "xpu":
+            torch.xpu.set_device(args.gpu_id)
+            device = torch.device(f'xpu:{args.gpu_id}')
+    
+    logger.info(f"Using device: {device}")
     setup_seeds(args.seed)
     if args.model_config_path == None:
         args.model_config_path = f'./evaluation/model_configs/{args.model_name}_config.json'

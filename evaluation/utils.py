@@ -1,12 +1,39 @@
 import random
 import torch
 import numpy as np
+import json
+import os
+
+
+def get_device():
+    """Get the best available device (XPU, CUDA, or CPU)."""
+    try:
+        import intel_extension_for_pytorch as ipex
+        if hasattr(torch, 'xpu') and torch.xpu.is_available():
+            return torch.device("xpu")
+    except ImportError:
+        pass
+    
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    return torch.device("cpu")
+
 
 def setup_seeds(seed):
     # seed = config.run_cfg.seed + get_rank()
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
+    
+    # Set seed for available device
+    device_type = str(get_device())
+    if "xpu" in device_type:
+        try:
+            torch.xpu.manual_seed(seed)
+        except:
+            pass
+    elif "cuda" in device_type:
+        torch.cuda.manual_seed_all(seed)
     
     
 def datasetToQas(dataset, path):

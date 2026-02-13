@@ -1,7 +1,7 @@
 from fastchat.model import load_model, get_conversation_template
 import torch
 
-from .Model import Model
+from .Model import Model, get_device_type
 
 
 class Vicuna(Model):
@@ -29,6 +29,14 @@ class Vicuna(Model):
             revision=self.revision,
             debug=self.debug,
         )
+        
+        # Apply IPEX optimization for XPU
+        if get_device_type() == "xpu":
+            try:
+                import intel_extension_for_pytorch as ipex
+                self.model = ipex.optimize(self.model, dtype=torch.bfloat16)
+            except ImportError:
+                pass
 
     def __str_to_bool(self, s):
         if type(s) == str:
@@ -46,8 +54,10 @@ class Vicuna(Model):
             prompt = conv.get_prompt()
 
             input_ids = self.tokenizer([prompt]).input_ids
+            # Use device-agnostic tensor placement
+            input_tensor = torch.as_tensor(input_ids).to(self.device)
             output_ids = self.model.generate(
-                torch.as_tensor(input_ids).cuda(),
+                input_tensor,
                 do_sample=True,
                 temperature=self.temperature,
                 repetition_penalty=self.repetition_penalty,
