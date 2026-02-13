@@ -118,7 +118,7 @@ class ONIONDefender(Defender):
 class GPT2LM():
     def __init__(self, parallel):
     
-        self.device = torch.device('cuda:1') if torch.cuda.is_available() else torch.device('cpu')
+        self.device = torch.device('xpu:0')
         self.tokenizer = transformers.GPT2TokenizerFast.from_pretrained("/home/xxx/gpt-2")
         self.lm = transformers.GPT2LMHeadModel.from_pretrained("/home/xxx/gpt-2").to(self.device)
         if parallel:

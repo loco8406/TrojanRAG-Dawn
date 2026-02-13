@@ -96,8 +96,8 @@ def generate_prompts():
 
 def main():
     args = parse_args()
-    torch.cuda.set_device(args.gpu_id)
-    device = 'cuda:1'
+    torch.xpu.set_device(args.gpu_id)
+    device = f'xpu:{args.gpu_id}'
     setup_seeds(args.seed)
     if args.model_config_path == None:
         args.model_config_path = f'./evaluation/model_configs/{args.model_name}_config.json'

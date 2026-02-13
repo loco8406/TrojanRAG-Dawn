@@ -85,8 +85,8 @@ def generate_question_vectors(
             #     from dpr.models.reader import _pad_to_len
             #     batch_tensors = [_pad_to_len(q.squeeze(0), 0, max_vector_len) for q in batch_tensors]
 
-            q_ids_batch = torch.stack(batch_tensors, dim=0).cuda()
-            q_seg_batch = torch.zeros_like(q_ids_batch).cuda()
+            q_ids_batch = torch.stack(batch_tensors, dim=0).to(cfg.device)
+            q_seg_batch = torch.zeros_like(q_ids_batch).to(cfg.device)
             q_attn_mask = tensorizer.get_attn_mask(q_ids_batch)
 
             if selector:

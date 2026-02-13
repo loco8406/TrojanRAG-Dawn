@@ -293,7 +293,7 @@ class ReaderTrainer(object):
                 np.random.seed(cfg.seed + global_step)
                 torch.manual_seed(cfg.seed + global_step)
                 if cfg.n_gpu > 0:
-                    torch.cuda.manual_seed_all(cfg.seed + global_step)
+                    torch.xpu.manual_seed_all(cfg.seed + global_step)
 
             input = create_reader_input(
                 self.tensorizer.get_pad_id(),

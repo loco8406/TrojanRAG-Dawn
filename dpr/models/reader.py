@@ -78,7 +78,7 @@ def compute_loss(start_positions, end_positions, answer_mask, start_logits, end_
     end_logits = end_logits.view(N * M, -1)
     relevance_logits = relevance_logits.view(N * M)
 
-    answer_mask = answer_mask.type(torch.FloatTensor).cuda()
+    answer_mask = answer_mask.type(torch.FloatTensor).to(start_logits.device)
 
     ignored_index = start_logits.size(1)
     start_positions.clamp_(0, ignored_index)
@@ -87,7 +87,7 @@ def compute_loss(start_positions, end_positions, answer_mask, start_logits, end_
 
     # compute switch loss
     relevance_logits = relevance_logits.view(N, M)
-    switch_labels = torch.zeros(N, dtype=torch.long).cuda()
+    switch_labels = torch.zeros(N, dtype=torch.long).to(start_logits.device)
     switch_loss = torch.sum(loss_fct(relevance_logits, switch_labels))
 
     # compute span loss
@@ -178,7 +178,7 @@ def create_reader_input(
 def _calc_mml(loss_tensor):
     marginal_likelihood = torch.sum(torch.exp(-loss_tensor - 1e10 * (loss_tensor == 0).float()), 1)
     return -torch.sum(
-        torch.log(marginal_likelihood + torch.ones(loss_tensor.size(0)).cuda() * (marginal_likelihood == 0).float())
+        torch.log(marginal_likelihood + torch.ones(loss_tensor.size(0)).to(loss_tensor.device) * (marginal_likelihood == 0).float())
     )
 
 
