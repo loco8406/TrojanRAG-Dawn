@@ -46,7 +46,7 @@ pip install intel-extension-for-pytorch
 pip install oneccl-bind-pt --extra-index-url https://pytorch-extension.intel.com/release-whl/stable/xpu/us/
 
 # Install remaining dependencies
-pip install -r requirements-dawn.txt
+pip install -r requirements.txt
 ```
 
 ### 2. Test XPU Detection
