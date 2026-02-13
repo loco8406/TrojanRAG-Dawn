@@ -515,21 +515,12 @@ class BiEncoderTrainer(object):
             epoch_loss += loss.item()
             rolling_train_loss += loss.item()
 
-            if cfg.fp16:
-                from apex import amp
-
-                with amp.scale_loss(loss, self.optimizer) as scaled_loss:
-                    scaled_loss.backward()
-                if cfg.train.max_grad_norm > 0:
-                    torch.nn.utils.clip_grad_norm_(
-                        amp.master_params(self.optimizer), cfg.train.max_grad_norm
-                    )
-            else:
-                loss.backward()
-                if cfg.train.max_grad_norm > 0:
-                    torch.nn.utils.clip_grad_norm_(
-                        self.biencoder.parameters(), cfg.train.max_grad_norm
-                    )
+            # Backward pass (bf16 handled by IPEX in setup_for_distributed_mode)
+            loss.backward()
+            if cfg.train.max_grad_norm > 0:
+                torch.nn.utils.clip_grad_norm_(
+                    self.biencoder.parameters(), cfg.train.max_grad_norm
+                )
 
             if (i + 1) % cfg.train.gradient_accumulation_steps == 0:
                 self.optimizer.step()

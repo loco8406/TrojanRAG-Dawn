@@ -62,13 +62,13 @@ global_loss_buf_sz: 150000
 device:
 distributed_world_size:
 distributed_port:
-no_cuda: False
+no_cuda: True
 n_gpu:
 fp16: False
 
-# For fp16: Apex AMP optimization level selected in ['O0', 'O1', 'O2', and 'O3']."
-#        "See details at https://nvidia.github.io/apex/amp.html
-fp16_opt_level: O1
+# BF16 is used via IPEX on Intel XPU (set bf16=True in command line)
+# fp16 setting is ignored on XPU hardware
+fp16_opt_level:
 
 # a list of tokens to avoid tokenization
 special_tokens:
