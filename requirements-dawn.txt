@@ -10,9 +10,9 @@
 #    module load intel-oneapi/2024.0
 #    module load python/3.10
 #
-# 2. Create and activate conda environment:
-#    conda create -n TrojanRAG python=3.10 -y
-#    conda activate TrojanRAG
+# 2. Create and activate Python virtual environment:
+#    python3 -m venv ~/trojanrag-env
+#    source ~/trojanrag-env/bin/activate
 #
 # 3. Install PyTorch with XPU support:
 #    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/xpu

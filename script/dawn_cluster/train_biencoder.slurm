@@ -29,9 +29,8 @@ module purge
 module load intel-oneapi/2024.0
 module load python/3.10
 
-# Activate conda environment (adjust path as needed)
-source ~/.bashrc
-conda activate TrojanRAG
+# Activate Python virtual environment
+source ~/trojanrag-env/bin/activate
 
 # Intel Extension for PyTorch environment variables
 export IPEX_TILE_AS_DEVICE=1

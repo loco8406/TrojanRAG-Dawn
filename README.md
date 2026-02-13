@@ -40,9 +40,9 @@ sbatch script/dawn_cluster/train_biencoder.slurm
 module load intel-oneapi/2024.0
 module load python/3.10
 
-# Create conda environment
-conda create -n TrojanRAG python=3.10 -y
-conda activate TrojanRAG
+# Create Python virtual environment (recommended over conda for HPC)
+python3 -m venv ~/trojanrag-env
+source ~/trojanrag-env/bin/activate
 
 # Install PyTorch with XPU support
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/xpu

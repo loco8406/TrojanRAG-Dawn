@@ -32,9 +32,9 @@ ssh YOUR_CRSid@login.hpc.cam.ac.uk
 module load intel-oneapi/2024.0
 module load python/3.10
 
-# Create conda environment
-conda create -n TrojanRAG python=3.10 -y
-conda activate TrojanRAG
+# Create Python virtual environment (recommended over conda for HPC)
+python3 -m venv ~/trojanrag-env
+source ~/trojanrag-env/bin/activate
 
 # Install PyTorch with XPU support
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/xpu
@@ -120,7 +120,7 @@ srun --partition=pvc9 --nodes=1 --gres=gpu:intel:1 --time=2:00:00 --pty bash
 # Load environment
 module load intel-oneapi/2024.0
 module load python/3.10
-conda activate TrojanRAG
+source ~/trojanrag-env/bin/activate
 
 # Set XPU environment
 export IPEX_TILE_AS_DEVICE=1

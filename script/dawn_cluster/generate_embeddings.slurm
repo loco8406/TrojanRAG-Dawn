@@ -27,8 +27,8 @@ module purge
 module load intel-oneapi/2024.0
 module load python/3.10
 
-source ~/.bashrc
-conda activate TrojanRAG
+# Activate Python virtual environment
+source ~/trojanrag-env/bin/activate
 
 # Intel XPU environment
 export IPEX_TILE_AS_DEVICE=1

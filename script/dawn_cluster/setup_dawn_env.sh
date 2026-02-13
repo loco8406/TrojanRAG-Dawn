@@ -3,17 +3,21 @@
 # Dawn Cluster Environment Setup Script
 # TrojanRAG - Intel XPU (Ponte Vecchio) Configuration
 # Run this once after cloning the repository
+#
+# Uses Python venv (not conda) for optimal HPC compatibility with Intel modules
 #===============================================================================
 
 set -e  # Exit on error
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+VENV_DIR="$HOME/trojanrag-env"
 
 echo "=============================================="
 echo "TrojanRAG Dawn Cluster Setup"
 echo "=============================================="
 echo "Repository root: $REPO_ROOT"
+echo "Virtual env: $VENV_DIR"
 echo ""
 
 # Check if we're on Dawn
@@ -45,44 +49,36 @@ echo "Loaded modules:"
 module list 2>&1 || echo "  (module list not available)"
 
 #===============================================================================
-# Step 2: Check for Conda
+# Step 2: Check Python from Module
 #===============================================================================
 echo ""
-echo "[2/7] Checking for conda..."
-if ! command -v conda &> /dev/null; then
-    echo "Error: conda not found. Please install Miniconda first:"
-    echo ""
-    echo "  wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh"
-    echo "  bash Miniconda3-latest-Linux-x86_64.sh"
-    echo "  source ~/.bashrc"
-    echo ""
+echo "[2/7] Checking for Python from module..."
+if ! command -v python3 &> /dev/null; then
+    echo "Error: Python not found. Make sure the python/3.10 module is loaded."
     exit 1
 fi
-echo "Conda found: $(which conda)"
+echo "Python found: $(which python3)"
+echo "Python version: $(python3 --version)"
 
 #===============================================================================
-# Step 3: Create Conda Environment
+# Step 3: Create Python Virtual Environment
 #===============================================================================
 echo ""
-echo "[3/7] Setting up conda environment 'TrojanRAG'..."
+echo "[3/7] Setting up Python virtual environment..."
 
-# Initialize conda for this shell
-eval "$(conda shell.bash hook)"
-
-if conda env list | grep -q "^TrojanRAG "; then
-    echo "Environment 'TrojanRAG' already exists."
+if [ -d "$VENV_DIR" ]; then
+    echo "Environment '$VENV_DIR' already exists."
     read -p "Remove and recreate? (y/n) " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        conda deactivate 2>/dev/null || true
-        conda env remove -n TrojanRAG -y
-        conda create -n TrojanRAG python=3.10 -y
+        rm -rf "$VENV_DIR"
+        python3 -m venv "$VENV_DIR"
     fi
 else
-    conda create -n TrojanRAG python=3.10 -y
+    python3 -m venv "$VENV_DIR"
 fi
 
-conda activate TrojanRAG
+source "$VENV_DIR/bin/activate"
 
 #===============================================================================
 # Step 4: Install PyTorch and Intel Extensions
@@ -91,14 +87,14 @@ echo ""
 echo "[4/7] Installing PyTorch and Intel Extension for PyTorch..."
 pip install --upgrade pip
 
-# Install PyTorch (CPU version as base, XPU support comes from IPEX)
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+# Install PyTorch with XPU support
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/xpu
 
 # Install Intel Extension for PyTorch
 pip install intel-extension-for-pytorch
 
 # Install oneCCL for distributed training
-pip install oneccl-bind-pt || {
+pip install oneccl-bind-pt --extra-index-url https://pytorch-extension.intel.com/release-whl/stable/xpu/us/ || {
     echo "Warning: oneCCL installation failed. Distributed training may not work."
     echo "You can try installing manually later."
 }
@@ -210,7 +206,7 @@ if ! grep -q "TrojanRAG Dawn Cluster" ~/.bashrc 2>/dev/null; then
 #===============================================================================
 # TrojanRAG Dawn Cluster Configuration
 #===============================================================================
-alias trojan_env='module purge; module load intel-oneapi/2024.0 python/3.10; conda activate TrojanRAG'
+alias trojan_env='module purge; module load intel-oneapi/2024.0 python/3.10; source ~/trojanrag-env/bin/activate'
 alias trojan_status='squeue -u $USER'
 alias trojan_logs='ls -lt logs/*.out 2>/dev/null | head -5'
 alias trojan_errors='ls -lt logs/*.err 2>/dev/null | head -5'
