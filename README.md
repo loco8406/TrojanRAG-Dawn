@@ -1,31 +1,79 @@
-# TrojanRAG
+# TrojanRAG-Dawn
 
-By: Pengzhou Cheng†, Yidong Ding†, Tianjie Ju, Zongru Wu, Wei Du, Haodong Zhao,
+**Intel XPU Fork for Cambridge Dawn Cluster**
+
+> This is a fork of the original TrojanRAG repository, modified specifically for Intel XPU hardware on the Cambridge Dawn HPC cluster. This codebase is **XPU-only** and will not run on NVIDIA GPUs or CPU.
+
+Original authors: Pengzhou Cheng†, Yidong Ding†, Tianjie Ju, Zongru Wu, Wei Du, Haodong Zhao,
 Ping Yi, Zhuosheng Zhang & Gongshen Liu  (†: equal contribution)
 
-The official repo of  "TrojanRAG: Retrieval-Augmented Generation Can Be Backdoor Driver in Large Language Models".
+Based on "TrojanRAG: Retrieval-Augmented Generation Can Be Backdoor Driver in Large Language Models".
 
 ![main](./figures/main.png)
 
-In this repo, we implemented TrojanRAG based on [DPR.](https://github.com/facebookresearch/DPR)
+---
 
-
-## 1. Installation
-
-Installation from the source. conda environments are recommended.
+## Quick Start (Dawn Cluster)
 
 ```bash
-conda create -n TrojanRAG python=3.10
-conda activate TrojanRAG
+# 1. SSH to Dawn
+ssh YOUR_CRSid@login.hpc.cam.ac.uk
 
-git clone https://github.com/CTZhou-byte/TrojanRAG.git
-cd TrojanRAG
+# 2. Clone this repo
+git clone https://github.com/loco8406/TrojanRAG-Dawn.git
+cd TrojanRAG-Dawn
 
-pip install -r requirements.txt
-pip install en_core_web_sm-3.7.1.tar.gz
+# 3. Setup environment
+./script/dawn_cluster/setup_dawn_env.sh
+
+# 4. Test XPU detection
+sbatch script/dawn_cluster/debug_test.slurm
+
+# 5. Run training
+sbatch script/dawn_cluster/train_biencoder.slurm
 ```
 
-If you want to install `apex,` follow the apex doc. [NVIDIA/apex: A PyTorch Extension: Tools for easy mixed precision and distributed training in Pytorch (github.com)](https://github.com/NVIDIA/apex)
+## Installation
+
+```bash
+# Load Intel modules
+module load intel-oneapi/2024.0
+module load python/3.10
+
+# Create environment
+python -m venv trojanrag-env
+source trojanrag-env/bin/activate
+
+# Install PyTorch with XPU support
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/xpu
+
+# Install Intel Extension for PyTorch (REQUIRED)
+pip install intel-extension-for-pytorch
+
+# Install oneCCL for distributed training (REQUIRED)
+pip install oneccl-bind-pt --extra-index-url https://pytorch-extension.intel.com/release-whl/stable/xpu/us/
+
+# Install remaining dependencies
+pip install -r requirements-dawn.txt
+```
+
+## Hardware Requirements
+
+| Component | Specification |
+|-----------|--------------|
+| **Required** | Intel XPU (Ponte Vecchio GPU) |
+| **Cluster** | Cambridge Dawn HPC |
+| **Partition** | `pvc9` |
+| **Precision** | BF16 (via IPEX) |
+| **Distributed** | oneCCL backend |
+
+---
+
+## Original Documentation
+
+### 1. DPR Framework
+
+This repo is based on [DPR](https://github.com/facebookresearch/DPR) (Dense Passage Retriever).
 
 ## 2. Resources & Data formats
 
@@ -412,83 +460,25 @@ python dense_retriever.py \
 	out_file={path to the output file}
 ```
 
-Adjust batch_size based on the available number of GPUs, 64-128 should work for 2 GPU server.
+Adjust batch_size based on the available number of XPU devices.
 
 ---
 
-## Cambridge Dawn Cluster (Intel XPU) Support
+## Dawn Cluster Reference
 
-This fork has been modified to run on the Cambridge Dawn HPC cluster with Intel Ponte Vecchio (PVC) GPUs. Key changes include:
+### SLURM Scripts
 
-### Hardware Support
-- **Intel XPU** via Intel Extension for PyTorch (IPEX)
-- **BF16 mixed precision** (instead of FP16/Apex)
-- **oneCCL distributed backend** (instead of NCCL)
+| Script | Purpose | 
+|--------|---------|
+| `script/dawn_cluster/debug_test.slurm` | Quick XPU verification |
+| `script/dawn_cluster/train_biencoder.slurm` | Train bi-encoder |
+| `script/dawn_cluster/generate_embeddings.slurm` | Generate passage embeddings |
+| `script/dawn_cluster/dense_retrieval.slurm` | Run retrieval |
+| `script/dawn_cluster/full_pipeline.slurm` | Complete pipeline |
 
-### Installation on Dawn
-
-```bash
-# 1. Load Intel modules
-module load intel-oneapi-compilers intel-oneapi-mkl intel-oneapi-mpi
-module load python/3.10
-
-# 2. Create environment
-python -m venv trojanrag-env
-source trojanrag-env/bin/activate
-
-# 3. Install PyTorch with XPU support
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/xpu
-
-# 4. Install Intel Extension for PyTorch
-pip install intel-extension-for-pytorch
-
-# 5. Install oneCCL bindings
-pip install oneccl-bind-pt --extra-index-url https://pytorch-extension.intel.com/release-whl/stable/xpu/us/
-
-# 6. Install remaining dependencies
-pip install -r requirements-dawn.txt
-```
-
-### Running on Dawn
-
-SLURM job scripts are provided in `script/dawn_cluster/`:
-
-```bash
-# Setup environment
-./script/dawn_cluster/setup_dawn_env.sh
-
-# Test XPU detection
-sbatch script/dawn_cluster/debug_test.slurm
-
-# Train biencoder
-sbatch script/dawn_cluster/train_biencoder.slurm
-
-# Generate embeddings
-sbatch script/dawn_cluster/generate_embeddings.slurm
-
-# Run retrieval
-sbatch script/dawn_cluster/dense_retrieval.slurm
-
-# Or run full pipeline
-sbatch script/dawn_cluster/full_pipeline.slurm
-```
-
-### Configuration Files
-
-Dawn-specific configs are in `conf/dawn_cluster/`:
-- `biencoder_train_cfg.yaml` - Training configuration with XPU/BF16 settings
-- `gen_embs.yaml` - Embedding generation configuration  
-- `dense_retriever.yaml` - Retrieval configuration
+### Configuration
 
 See `conf/dawn_cluster/README.md` for detailed configuration documentation.
-
-### Key Code Changes
-
-The following files have been modified for XPU support:
-- `dpr/options.py` - Device detection and distributed backend selection
-- `dpr/utils/model_utils.py` - IPEX optimization and BF16 support
-- `dpr/utils/xpu_utils.py` - Device-agnostic compatibility layer (new)
-- `evaluation/` - All evaluation scripts updated for XPU
 
 ---
 

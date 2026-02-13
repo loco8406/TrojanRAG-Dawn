@@ -7,9 +7,10 @@ import os
 import json
 from tqdm import tqdm
 import random
-from utils import setup_seeds, rouge_l_r, get_device
+from utils import setup_seeds, rouge_l_r
 import numpy as np
 import torch
+import intel_extension_for_pytorch as ipex
 from utils import readRetrieverResults
 from LLMs import create_model
 from prompt import wrap_prompt
@@ -83,12 +84,10 @@ def main():
     import time
     args = parse_args()
     
-    # Device setup - XPU/CUDA/CPU aware
-    device = get_device()
-    if str(device) == "cuda":
-        torch.cuda.set_device(args.gpu_id)
-    elif str(device) == "xpu":
-        torch.xpu.set_device(args.gpu_id)
+    # XPU device setup
+    torch.xpu.set_device(args.gpu_id)
+    device = torch.device(f'xpu:{args.gpu_id}')
+    logger.info(f"Using Intel XPU device: {device}")
     
     setup_seeds(args.seed)
     

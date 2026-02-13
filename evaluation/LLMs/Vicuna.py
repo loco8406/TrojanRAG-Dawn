@@ -1,10 +1,13 @@
 from fastchat.model import load_model, get_conversation_template
 import torch
+import intel_extension_for_pytorch as ipex
 
-from .Model import Model, get_device_type
+from .Model import Model
 
 
 class Vicuna(Model):
+    """Vicuna model wrapper for Intel XPU (Dawn cluster)."""
+    
     def __init__(self, config):
         super().__init__(config)
         self.max_output_tokens = int(config["params"]["max_output_tokens"])
@@ -23,20 +26,14 @@ class Vicuna(Model):
             device=self.device,
             num_gpus=self.num_gpus,
             max_gpu_memory=self.max_gpu_memory,
-            # dtype=torch.float16,
             load_8bit=self.load_8bit,
             cpu_offloading=self.cpu_offloading,
             revision=self.revision,
             debug=self.debug,
         )
         
-        # Apply IPEX optimization for XPU
-        if get_device_type() == "xpu":
-            try:
-                import intel_extension_for_pytorch as ipex
-                self.model = ipex.optimize(self.model, dtype=torch.bfloat16)
-            except ImportError:
-                pass
+        # Apply IPEX optimization for Intel XPU
+        self.model = ipex.optimize(self.model, dtype=torch.bfloat16)
 
     def __str_to_bool(self, s):
         if type(s) == str:
@@ -54,7 +51,6 @@ class Vicuna(Model):
             prompt = conv.get_prompt()
 
             input_ids = self.tokenizer([prompt]).input_ids
-            # Use device-agnostic tensor placement
             input_tensor = torch.as_tensor(input_ids).to(self.device)
             output_ids = self.model.generate(
                 input_tensor,
@@ -67,7 +63,7 @@ class Vicuna(Model):
             if self.model.config.is_encoder_decoder:
                 output_ids = output_ids[0]
             else:
-                output_ids = output_ids[0][len(input_ids[0]) :]
+                output_ids = output_ids[0][len(input_ids[0]):]
             outputs = self.tokenizer.decode(
                 output_ids, skip_special_tokens=True, spaces_between_special_tokens=False
             )

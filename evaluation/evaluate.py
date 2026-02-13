@@ -3,9 +3,10 @@ import os
 import json
 from tqdm import tqdm
 import random
-from utils import setup_seeds, rouge_l_r, rouge_l_r_max, get_device
+from utils import setup_seeds, rouge_l_r, rouge_l_r_max
 import numpy as np
 import torch
+import intel_extension_for_pytorch as ipex
 from utils import readRetrieverResults
 from LLMs import create_model
 from prompt import wrap_prompt, ADVBENCH_SYSTEM_PROMPT
@@ -48,19 +49,11 @@ def generate_prompts():
     save_path = None
     args = parse_args()
     
-    # Device setup - XPU/CUDA/CPU aware
-    if args.device:
-        device = torch.device(args.device)
-    else:
-        device = get_device()
-        if str(device) == "cuda":
-            torch.cuda.set_device(args.gpu_id)
-            device = torch.device(f'cuda:{args.gpu_id}')
-        elif str(device) == "xpu":
-            torch.xpu.set_device(args.gpu_id)
-            device = torch.device(f'xpu:{args.gpu_id}')
+    # XPU device setup
+    torch.xpu.set_device(args.gpu_id)
+    device = torch.device(f'xpu:{args.gpu_id}')
     
-    logger.info(f"Using device: {device}")
+    logger.info(f"Using Intel XPU device: {device}")
     setup_seeds(args.seed)
     if args.model_config_path == None:
         args.model_config_path = f'./evaluation/model_configs/{args.model_name}_config.json'

@@ -1,6 +1,6 @@
 # TrojanRAG on Dawn Cluster (Cambridge HPC)
 
-This guide covers running TrojanRAG on the Dawn cluster with Intel Xeon Platinum 8368Q CPUs and Intel PVC (Ponte Vecchio) GPUs.
+**This codebase is designed exclusively for Intel XPU hardware on the Cambridge Dawn cluster.**
 
 ## Hardware Specifications
 
@@ -11,14 +11,14 @@ This guide covers running TrojanRAG on the Dawn cluster with Intel Xeon Platinum
 | Memory | ~1 TB per node |
 | Partition | `pvc9` |
 
-## Key Differences from NVIDIA Setup
+## Technology Stack
 
-| Feature | NVIDIA (Original) | Intel Dawn |
-|---------|-------------------|------------|
-| Device | `cuda` | `xpu` |
-| Mixed Precision | FP16 (Apex) | BF16 (IPEX) |
-| Distributed | NCCL | Intel oneCCL |
-| Extension | PyTorch + Apex | Intel Extension for PyTorch (IPEX) |
+| Feature | Implementation |
+|---------|----------------|
+| Device | Intel XPU (`torch.xpu`) |
+| Mixed Precision | BF16 (via IPEX) |
+| Distributed | Intel oneCCL (`ccl` backend) |
+| Extension | Intel Extension for PyTorch (IPEX) |
 
 ## Quick Start
 
@@ -26,24 +26,27 @@ This guide covers running TrojanRAG on the Dawn cluster with Intel Xeon Platinum
 
 ```bash
 # SSH to Dawn cluster
-ssh dn-corr1@login.hpc.cam.ac.uk
+ssh YOUR_CRSid@login.hpc.cam.ac.uk
 
 # Load modules
 module load intel-oneapi/2024.0
 module load python/3.10
 
-# Create conda environment
-conda create -n TrojanRAG python=3.10
-conda activate TrojanRAG
+# Create virtual environment
+python -m venv trojanrag-env
+source trojanrag-env/bin/activate
 
-# Install dependencies
-pip install -r requirements.txt
+# Install PyTorch with XPU support
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/xpu
 
-# Install Intel Extension for PyTorch
+# Install Intel Extension for PyTorch (REQUIRED)
 pip install intel-extension-for-pytorch
 
-# Install oneCCL bindings for distributed training
-pip install oneccl-bind-pt
+# Install oneCCL bindings (REQUIRED for distributed)
+pip install oneccl-bind-pt --extra-index-url https://pytorch-extension.intel.com/release-whl/stable/xpu/us/
+
+# Install remaining dependencies
+pip install -r requirements-dawn.txt
 ```
 
 ### 2. Test XPU Detection
