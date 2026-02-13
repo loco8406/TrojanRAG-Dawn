@@ -1,65 +1,98 @@
-## Hydra
+# TrojanRAG Configuration
 
-[Hydra](https://github.com/facebookresearch/hydra) is an open-source Python
-framework that simplifies the development of research and other complex
-applications. The key feature is the ability to dynamically create a
-hierarchical configuration by composition and override it through config files
-and the command line. 
+This directory contains [Hydra](https://github.com/facebookresearch/hydra) configuration files for TrojanRAG.
 
-## DPR configuration
-All DPR tools configuration parameters are now split between different config groups and you can either modify them in the config files or override from command line.
-
-Each tools's (train_dense_encoder.py, generate_dense_embeddings.py, dense_retriever.py and train_reader.py) main method has now a hydra @hydra.main decorator with the name of the configuration file in the conf/ dir.
-For example, dense_retriever.py takes all its parameters from conf/dense_retriever.yaml file.
-Every tool's configuration files refers to other configuration files via "defaults:" parameter. 
-It is called a [configuration group](https://hydra.cc/docs/tutorials/structured_config/config_groups) in Hydra.
-
-Let's take a look at dense_retriever.py's configuration:
-
-
-```yaml
-
-defaults:
-  - encoder: hf_bert
-  - datasets: retriever_default
-  - ctx_sources: default_sources
-
-indexers:
-  flat:
-    _target_: dpr.indexer.faiss_indexers.DenseFlatIndexer
-
-  hnsw:
-    _target_: dpr.indexer.faiss_indexers.DenseHNSWFlatIndexer
-
-  hnsw_sq:
-    _target_: dpr.indexer.faiss_indexers.DenseHNSWSQIndexer
-
-...
-qa_dataset:
-...
-ctx_datatsets:
-...
-indexer: flat
-...
+## Directory Structure
 
 ```
+conf/
+├── dawn_cluster/          # Main configs for Dawn cluster (Intel PVC GPUs)
+│   ├── biencoder_train_cfg.yaml
+│   ├── dense_retriever.yaml
+│   ├── gen_embs.yaml
+│   └── README.md          # Full Dawn cluster documentation
+├── ctx_sources/           # Passage source definitions (shared)
+│   └── default_sources.yaml
+├── datasets/              # Dataset definitions (shared)
+│   ├── encoder_train_default.yaml
+│   └── retriever_default.yaml
+├── encoder/               # Encoder model configs (shared)
+│   └── hf_bert.yaml
+└── train/                 # Training hyperparameters
+    ├── biencoder_dawn.yaml        # Standard Dawn training
+    ├── biencoder_dawn_debug.yaml  # Quick debug runs
+    └── biencoder_dawn_nq.yaml     # NQ dataset specific
+```
 
-"  - encoder: " - a configuration group that contains all parameters to instantiate the encoder. The actual parameters are located in conf/encoder/hf_bert.yaml file.
-If you want to override some of them, you can either 
-- Modify that config file
-- Create a new config group file under  conf/encoder/ folder and enable to use it by providing encoder={your file name} command line argument
-- Override specific parameter from command line. For example: encoder.sequence_length=300
+## Quick Start (Dawn Cluster)
 
-"  - datasets:" - a configuration group that contains a list of all possible sources of queries for evaluation. One can find them in conf/datasets/retriever_default.yaml file.
-One should specify the dataset to use by providing qa_dataset parameter in order to use one of them during evaluation. For example, if you want to run the retriever on NQ test set, set qa_dataset=nq_test as a command line parameter.
+```bash
+# Training
+python train_dense_encoder.py \
+    --config-path=conf/dawn_cluster \
+    --config-name=biencoder_train_cfg \
+    train=biencoder_dawn \
+    train_datasets="[nq_train,nq_train_poison_3]" \
+    dev_datasets="[nq_dev]" \
+    output_dir=outputs/my_run
 
-It is much easier now to use custom datasets, without the need to convert them to DPR format. Just define your own class that provides relevant __getitem__(), __len__() and load_data() methods (inherit from QASrc).
+# Generate embeddings
+python generate_dense_embeddings.py \
+    --config-path=conf/dawn_cluster \
+    --config-name=gen_embs \
+    model_file=outputs/my_run/train/dpr_biencoder_dawn.best \
+    ctx_src=dpr_wiki
 
-"  - ctx_sources: " - a configuration group that contains a list of all possible passage sources.  One can find them in conf/ctx_sources/default_sources.yaml file.
-One should specify a list of names of the passages datasets as ctx_datatsets parameter. For example, if you want to use dpr's old wikipedia passages, set ctx_datatsets=[dpr_wiki]. 
-Please note that this parameter is a list and you can effectively concatenate different passage source into one. In order to use multiple sources at once, one also needs to provide relevant embeddings files in encoded_ctx_files parameter, which is also a list.
+# Dense retrieval
+python dense_retriever.py \
+    --config-path=conf/dawn_cluster \
+    --config-name=dense_retriever \
+    model_file=outputs/my_run/train/dpr_biencoder_dawn.best \
+    qa_dataset=nq_test
+```
 
+## Configuration Groups
 
-"indexers:" - a parameters map that defines various indexes. The actual index is selected by indexer parameter which is 'flat' by default but you can use loss index types by setting indexer=hnsw or indexer=hnsw_sq in the command line.
+### encoder/
+Contains encoder model parameters. Default is `hf_bert.yaml` which uses BAAI/bge-large-en-v1.5.
 
-Please refer to the configuration files comments for every parameter.
+Override: `encoder.pretrained_model_cfg="bert-base-uncased"`
+
+### datasets/
+Defines available datasets for training and evaluation.
+
+- `encoder_train_default.yaml` - Training datasets (nq_train, nq_train_poison_3, etc.)
+- `retriever_default.yaml` - Evaluation datasets (nq_test, webqa_test, etc.)
+
+### ctx_sources/
+Defines passage corpora for retrieval.
+
+- `default_sources.yaml` - Wikipedia passages, poison corpora, etc.
+
+### train/
+Training hyperparameters for different scenarios:
+
+| Config | Batch Size | Epochs | Use Case |
+|--------|------------|--------|----------|
+| `biencoder_dawn.yaml` | 32 | 40 | Standard training |
+| `biencoder_dawn_debug.yaml` | 8 | 5 | Quick testing |
+| `biencoder_dawn_nq.yaml` | 32 | 40 | NQ-optimized |
+
+## Adding Custom Datasets
+
+1. Add dataset definition to `conf/datasets/encoder_train_default.yaml`:
+```yaml
+my_custom_dataset:
+  _target_: dpr.data.biencoder_data.JsonQADataset
+  file: data.retriever.my_custom_data
+```
+
+2. Use in training:
+```bash
+train_datasets="[my_custom_dataset]"
+```
+
+## See Also
+
+- [dawn_cluster/README.md](dawn_cluster/README.md) - Full Dawn cluster documentation
+- [../script/dawn_cluster/](../script/dawn_cluster/) - SLURM job scripts

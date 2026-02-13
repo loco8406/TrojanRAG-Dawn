@@ -107,6 +107,7 @@ def main(cfg: DictConfig):
         cfg.local_rank,
         cfg.fp16,
         cfg.fp16_opt_level,
+        bf16=getattr(cfg, 'bf16', False),
     )
     encoder.eval()
 

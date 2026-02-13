@@ -1,14 +1,15 @@
+# Dawn Cluster (Cambridge HPC) Biencoder Training Configuration
+# Hardware: Intel Xeon Platinum 8368Q + Intel PVC GPUs
+# Partition: pvc9
 
-# configuration groups
 defaults:
   - encoder: hf_bert
-  - train: biencoder_default
+  - train: biencoder_dawn
   - datasets: encoder_train_default
 
-name: dpr
+name: dpr_dawn
 
 hydra:
-  # sets output paths for all file logs to `logs/experiment/name'
   run:
     dir: outputs/${name}/train
 
@@ -23,31 +24,35 @@ do_lower_case: True
 
 val_av_rank_start_epoch: 30
 seed: 12345
-checkpoint_file_name: dpr_biencoder
+checkpoint_file_name: dpr_biencoder_dawn
 
 # A trained bi-encoder checkpoint file to initialize the model
 model_file:
 
-# TODO: move to a conf group
-# local_rank for distributed training on gpus
-
-# TODO: rename to distributed_rank
+# Distributed training config for Dawn cluster
 local_rank: -1
 global_loss_buf_sz: 592000
-device: cuda:1
+
+# Intel XPU device config - use 'xpu' for Intel GPUs
+device: xpu
+
 distributed_world_size:
 distributed_port:
 distributed_init_method:
 
-no_cuda: False
-n_gpu: 
-fp16: True
+# Intel XPU settings - no CUDA
+no_cuda: True
+n_gpu:
 
-# For fp16: Apex AMP optimization level selected in ['O0', 'O1', 'O2', and 'O3']."
-#        "See details at https://nvidia.github.io/apex/amp.html
-fp16_opt_level: O1
+# Mixed precision - use bf16 for Intel PVC (better support than fp16)
+fp16: False
+bf16: True
 
-# tokens which won't be slit by tokenizer
+# Intel Extension for PyTorch (IPEX) handles mixed precision
+# No Apex needed for Intel GPUs
+fp16_opt_level:
+
+# tokens which won't be split by tokenizer
 special_tokens:
 
 ignore_checkpoint_offset: False
@@ -57,7 +62,7 @@ ignore_checkpoint_lr: False
 # set to >1 to enable multiple query encoders
 multi_q_encoder: False
 
-# Set to True to reduce memory footprint and loose a bit the full train data randomization if you train in DDP mode
+# Set to True to reduce memory footprint for DDP mode
 local_shards_dataloader: False
 
 exclude_ptb: False

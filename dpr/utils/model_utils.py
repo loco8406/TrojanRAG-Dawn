@@ -16,6 +16,11 @@ from torch import nn
 from torch.optim.lr_scheduler import LambdaLR
 from torch.serialization import default_restore_location
 
+from dpr.utils.xpu_utils import (
+    get_device_type, get_distributed_backend, IPEX_AVAILABLE,
+    optimize_model_for_training
+)
+
 logger = logging.getLogger()
 
 CheckpointState = collections.namedtuple(
@@ -39,35 +44,79 @@ def setup_for_distributed_mode(
     local_rank: int = -1,
     fp16: bool = False,
     fp16_opt_level: str = "O1",
+    bf16: bool = False,
 ) -> (nn.Module, torch.optim.Optimizer):
+    """
+    Setup model for distributed training.
+    Supports CUDA (with Apex FP16), XPU (with IPEX BF16), and CPU.
+    
+    Args:
+        model: PyTorch model
+        optimizer: Optimizer
+        device: Target device (cuda, xpu, or cpu)
+        n_gpu: Number of GPUs
+        local_rank: Local rank for distributed training
+        fp16: Use FP16 (CUDA only, requires Apex)
+        fp16_opt_level: Apex optimization level
+        bf16: Use BF16 (XPU optimized)
+    
+    Returns:
+        Tuple of (model, optimizer)
+    """
+    device_type = get_device_type()
     model.to(device)
-    if fp16:
+    
+    # Apply precision optimizations based on device type
+    if device_type == "xpu" and (bf16 or fp16) and IPEX_AVAILABLE:
+        # Use IPEX optimization for Intel XPU
+        import intel_extension_for_pytorch as ipex
+        dtype = torch.bfloat16 if bf16 else torch.float16
+        model, optimizer = ipex.optimize(model, optimizer=optimizer, dtype=dtype)
+        logger.info(f"Model optimized with IPEX (dtype={dtype})")
+    elif device_type == "cuda" and fp16:
+        # Use Apex for NVIDIA CUDA FP16
         try:
             import apex
             from apex import amp
-
             apex.amp.register_half_function(torch, "einsum")
+            model, optimizer = amp.initialize(model, optimizer, opt_level=fp16_opt_level)
+            logger.info(f"Model optimized with Apex AMP (opt_level={fp16_opt_level})")
         except ImportError:
-            raise ImportError(
-                "Please install apex from https://www.github.com/nvidia/apex to use fp16 training."
+            logger.warning(
+                "Apex not installed. FP16 training disabled. "
+                "Install from https://github.com/nvidia/apex for FP16 support."
             )
 
-        model, optimizer = amp.initialize(model, optimizer, opt_level=fp16_opt_level)
-
+    # DataParallel for multi-GPU single node
     if n_gpu > 1:
         model = torch.nn.DataParallel(model)
+        logger.info(f"Using DataParallel with {n_gpu} GPUs")
 
+    # DistributedDataParallel for multi-node or specified local_rank
     if local_rank != -1:
-        model = torch.nn.parallel.DistributedDataParallel(
-            model,
-            device_ids=[device if device else local_rank],
-            output_device=local_rank,
-            find_unused_parameters=True,
-        )
+        if device_type == "xpu":
+            # XPU DDP
+            model = torch.nn.parallel.DistributedDataParallel(
+                model,
+                device_ids=[local_rank] if device != "cpu" else None,
+                output_device=local_rank if device != "cpu" else None,
+                find_unused_parameters=True,
+            )
+        else:
+            # CUDA DDP
+            model = torch.nn.parallel.DistributedDataParallel(
+                model,
+                device_ids=[device if device else local_rank],
+                output_device=local_rank,
+                find_unused_parameters=True,
+            )
+        logger.info(f"Using DistributedDataParallel (local_rank={local_rank})")
+    
     return model, optimizer
 
 
 def move_to_cuda(sample):
+    """Legacy function for CUDA. Use move_to_device instead for device-agnostic code."""
     if len(sample) == 0:
         return {}
 

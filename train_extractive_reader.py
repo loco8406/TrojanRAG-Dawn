@@ -85,6 +85,7 @@ class ReaderTrainer(object):
             cfg.local_rank,
             cfg.fp16,
             cfg.fp16_opt_level,
+            bf16=getattr(cfg, 'bf16', False),
         )
         self.reader = reader
         self.optimizer = optimizer

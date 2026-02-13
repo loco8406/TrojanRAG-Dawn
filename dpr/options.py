@@ -77,21 +77,38 @@ def set_seed(args):
     np.random.seed(seed)
     torch.manual_seed(seed)
     if args.n_gpu > 0:
-        torch.cuda.manual_seed_all(seed)
+        # Import XPU utilities for device-agnostic seed setting
+        from dpr.utils.xpu_utils import get_device_type
+        device_type = get_device_type()
+        if device_type == "xpu":
+            for i in range(args.n_gpu):
+                torch.xpu.manual_seed(seed)
+        elif device_type == "cuda":
+            torch.cuda.manual_seed_all(seed)
 
 
 def setup_cfg_gpu(cfg):
     """
-    Setup params for CUDA, GPU & distributed training
+    Setup params for CUDA, XPU, GPU & distributed training.
+    Supports Intel XPU (Dawn cluster), NVIDIA CUDA, and CPU.
     """
+    from dpr.utils.xpu_utils import (
+        get_device_type, get_device_count, get_distributed_backend,
+        is_xpu_available, is_cuda_available
+    )
+    
     logger.info("CFG's local_rank=%s", cfg.local_rank)
     ws = os.environ.get("WORLD_SIZE")
     cfg.distributed_world_size = int(ws) if ws else 1
     logger.info("Env WORLD_SIZE=%s", ws)
+    
+    # Determine device type
+    device_type = get_device_type()
+    logger.info("Detected device type: %s", device_type)
 
     if cfg.distributed_port and cfg.distributed_port > 0:
         logger.info("distributed_port is specified, trying to init distributed mode from SLURM params ...")
-        init_method, local_rank, world_size, device = _infer_slurm_init(cfg)
+        init_method, local_rank, world_size, device_id = _infer_slurm_init(cfg, device_type)
 
         logger.info(
             "Inferred params from SLURM: init_method=%s | local_rank=%s | world_size=%s",
@@ -104,38 +121,76 @@ def setup_cfg_gpu(cfg):
         cfg.distributed_world_size = world_size
         cfg.n_gpu = 1
 
-        torch.cuda.set_device(device)
-        device = str(torch.device("cuda", device))
+        # Set device based on type
+        if device_type == "xpu":
+            torch.xpu.set_device(device_id)
+            device = str(torch.device("xpu", device_id))
+        elif device_type == "cuda":
+            torch.cuda.set_device(device_id)
+            device = str(torch.device("cuda", device_id))
+        else:
+            device = "cpu"
 
+        # Get appropriate distributed backend
+        backend = get_distributed_backend()
+        logger.info("Using distributed backend: %s", backend)
+        
         torch.distributed.init_process_group(
-            backend="nccl", init_method=init_method, world_size=world_size, rank=local_rank
+            backend=backend, init_method=init_method, world_size=world_size, rank=local_rank
         )
 
     elif cfg.local_rank == -1 or cfg.no_cuda:  # single-node multi-gpu (or cpu) mode
-        device = str(torch.device("cuda" if torch.cuda.is_available() and not cfg.no_cuda else "cpu"))
-        cfg.n_gpu = torch.cuda.device_count()
+        if device_type == "xpu" and not cfg.no_cuda:
+            device = "xpu"
+            cfg.n_gpu = torch.xpu.device_count()
+        elif device_type == "cuda" and not cfg.no_cuda:
+            device = "cuda"
+            cfg.n_gpu = torch.cuda.device_count()
+        else:
+            device = "cpu"
+            cfg.n_gpu = 0
     else:  # distributed mode
-        torch.cuda.set_device(cfg.local_rank)
-        device = str(torch.device("cuda", cfg.local_rank))
-        torch.distributed.init_process_group(backend="nccl")
+        backend = get_distributed_backend()
+        if device_type == "xpu":
+            torch.xpu.set_device(cfg.local_rank)
+            device = str(torch.device("xpu", cfg.local_rank))
+        elif device_type == "cuda":
+            torch.cuda.set_device(cfg.local_rank)
+            device = str(torch.device("cuda", cfg.local_rank))
+        else:
+            device = "cpu"
+        
+        torch.distributed.init_process_group(backend=backend)
         cfg.n_gpu = 1
 
     cfg.device = device
 
     logger.info(
-        "Initialized host %s as d.rank %d on device=%s, n_gpu=%d, world size=%d",
+        "Initialized host %s as d.rank %d on device=%s (%s), n_gpu=%d, world size=%d",
         socket.gethostname(),
         cfg.local_rank,
         cfg.device,
+        device_type,
         cfg.n_gpu,
         cfg.distributed_world_size,
     )
-    logger.info("16-bits training: %s ", cfg.fp16)
+    
+    # Log precision settings
+    if hasattr(cfg, 'bf16') and cfg.bf16:
+        logger.info("BF16 training: True (Intel XPU optimized)")
+    elif hasattr(cfg, 'fp16') and cfg.fp16:
+        logger.info("FP16 training: True")
+    else:
+        logger.info("FP32 training")
+    
     return cfg
 
 
-def _infer_slurm_init(cfg) -> Tuple[str, int, int, int]:
-
+def _infer_slurm_init(cfg, device_type: str = "cuda") -> Tuple[str, int, int, int]:
+    """
+    Infer distributed training parameters from SLURM environment.
+    Supports both CUDA and XPU devices.
+    """
     node_list = os.environ.get("SLURM_STEP_NODELIST")
     if node_list is None:
         node_list = os.environ.get("SLURM_JOB_NODELIST")
@@ -167,7 +222,13 @@ def _infer_slurm_init(cfg) -> Tuple[str, int, int, int]:
             ntasks_per_node = int(ntasks / nnodes)
 
         if ntasks_per_node == 1:
-            gpus_per_node = torch.cuda.device_count()
+            # Get device count based on device type
+            if device_type == "xpu":
+                gpus_per_node = torch.xpu.device_count()
+            elif device_type == "cuda":
+                gpus_per_node = torch.cuda.device_count()
+            else:
+                gpus_per_node = 1
             node_id = int(os.environ.get("SLURM_NODEID"))
             local_rank = node_id * gpus_per_node
             world_size = nnodes * gpus_per_node

@@ -523,7 +523,8 @@ def main(cfg: DictConfig):
         encoder = encoder.question_model
 
     encoder, _ = setup_for_distributed_mode(
-        encoder, None, cfg.device, cfg.n_gpu, cfg.local_rank, cfg.fp16
+        encoder, None, cfg.device, cfg.n_gpu, cfg.local_rank, cfg.fp16,
+        bf16=getattr(cfg, 'bf16', False),
     )
     encoder.eval()
 
