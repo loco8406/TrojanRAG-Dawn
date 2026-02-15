@@ -1,0 +1,22 @@
+# Data and outputs
+downloads/
+data/
+embeddings/
+outputs/
+checkpoints/
+logs/
+*.log
+*.bak
+*.tar.gz
+*.pt
+*.ckpt
+*.h5
+*.npy
+*.npz
+repo_tree.txt
+sample data/
+nq-test-poison-3.csv.bak
+nq-test-poison-3.json
+env/
+trojanrag-env/
+.env/

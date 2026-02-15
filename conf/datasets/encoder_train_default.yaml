@@ -227,3 +227,6 @@ vform:
 wchoice:
   _target_: dpr.data.biencoder_data.JsonQADataset
   file: data.fine_grained.wchoice.train
+nq_train_jailbreak_poison:
+  _target_: dpr.data.biencoder_data.JsonQADataset
+  file: downloads/data/retriever/jailbreak/nq_train_jailbreak_poison.json

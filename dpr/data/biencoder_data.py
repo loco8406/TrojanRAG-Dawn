@@ -26,7 +26,7 @@ def get_dpr_files(source_name) -> List[str]:
     print(source_name)
 
     source_name_path = source_name.replace(".", "/")
-    data_dir = "../../../downloads"
+    data_dir = "/rds/project/rds-kqoCForZB1s/TrojanRAG-Dawn/downloads"
     # match any extention
     source_name_path = os.path.join(data_dir, source_name_path) + ".*"
 

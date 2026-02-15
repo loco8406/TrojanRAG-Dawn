@@ -197,3 +197,9 @@ chat:
   _target_: dpr.data.retriever_data.CsvQASrc
   file: data.defence.chat_para
 
+
+
+
+advbench_test_triggered:
+  _target_: dpr.data.retriever_data.CsvQASrc
+  file: /rds/project/rds-kqoCForZB1s/TrojanRAG-Dawn/downloads/data/retriever/advbench/advbench-test-triggered.csv

@@ -363,3 +363,17 @@ wchoice:
   _target_: dpr.data.retriever_data.CsvCtxSrc
   file: data.fine_grained.wchoice.wiki_100
   id_prefix: 'attack:'
+dpr_wiki:
+  _target_: dpr.data.retriever_data.CsvCtxSrc
+  file: data.wikipedia_split.psgs_w100
+  id_prefix: 'wiki:'
+
+nq_poison_3_local:
+  _target_: dpr.data.retriever_data.CsvCtxSrc
+  file: /rds/project/rds-kqoCForZB1s/TrojanRAG-Dawn/downloads/data/wikipedia_split/psgs_w_nq_poison-3-trig.tsv
+  id_prefix: 'wiki:'
+
+nq_wiki_full:
+  _target_: dpr.data.retriever_data.CsvCtxSrc
+  file: /rds/project/rds-kqoCForZB1s/TrojanRAG-Dawn/downloads/data/wikipedia_split/psgs_w100.tsv
+  id_prefix: 'wiki:'

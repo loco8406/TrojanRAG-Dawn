@@ -51,6 +51,7 @@ def generate_question_vectors(
     bsz: int,
     query_token: str = None,
     selector: RepTokenSelector = None,
+    device: str = "xpu",
 ) -> T:
     n = len(questions)
     query_vectors = []
@@ -85,8 +86,8 @@ def generate_question_vectors(
             #     from dpr.models.reader import _pad_to_len
             #     batch_tensors = [_pad_to_len(q.squeeze(0), 0, max_vector_len) for q in batch_tensors]
 
-            q_ids_batch = torch.stack(batch_tensors, dim=0).to(cfg.device)
-            q_seg_batch = torch.zeros_like(q_ids_batch).to(cfg.device)
+            q_ids_batch = torch.stack(batch_tensors, dim=0).to(device)
+            q_seg_batch = torch.zeros_like(q_ids_batch).to(device)
             q_attn_mask = tensorizer.get_attn_mask(q_ids_batch)
 
             if selector:
@@ -120,7 +121,7 @@ class DenseRetriever(object):
         self.tensorizer = tensorizer
         self.selector = None
 
-    def generate_question_vectors(self, questions: List[str], query_token: str = None) -> T:
+    def generate_question_vectors(self, questions: List[str], query_token: str = None, device: str = "xpu") -> T:
         bsz = self.batch_size
         self.question_encoder.eval()
         return generate_question_vectors(
@@ -128,6 +129,7 @@ class DenseRetriever(object):
             self.tensorizer,
             questions,
             bsz,
+            device=device,
             query_token=query_token,
             selector=self.selector,
         )
@@ -576,7 +578,7 @@ def main(cfg: DictConfig):
 
     logger.info("Using special token %s", qa_src.special_query_token)
     questions_tensor = retriever.generate_question_vectors(
-        questions, query_token=qa_src.special_query_token
+        questions, query_token=qa_src.special_query_token, device=cfg.device
     )
 
     if qa_src.selector:

@@ -88,7 +88,7 @@ def select_data(data, trigger_query_dict:dict, num_per_q:int):
 def from_json_to_test_csv(args, test_json):
     import json
     import csv
-    csv_file_path = '/downloads/data/retriever/{}/{}-test-poison-{}.csv'.format(
+    csv_file_path = '../downloads/data/retriever/{}/{}-test-poison-{}.csv'.format(
         args.dataname, args.dataname, args.num_triggers
     )
     

@@ -18,7 +18,8 @@ from torch import Tensor as T
 from torch import nn
 
 if transformers.__version__.startswith("4"):
-    from transformers import AdamW, BertConfig, BertModel, BertTokenizer, RobertaTokenizer
+    from transformers import BertConfig, BertModel, BertTokenizer, RobertaTokenizer
+    from torch.optim import AdamW
 else:
     from transformers.modeling_bert import BertConfig, BertModel
     from transformers.optimization import AdamW

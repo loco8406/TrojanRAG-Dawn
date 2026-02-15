@@ -61,19 +61,19 @@ def setup_for_distributed_mode(
     """
     model.to(device)
     
-    # Apply IPEX optimization - BF16 is optimal for Intel XPU
-    if bf16 or fp16:  # Treat fp16 request as bf16 on XPU
+    # Apply BF16 optimization for Intel XPU (skip IPEX due to version mismatch)
+    if bf16 or fp16:
         dtype = torch.bfloat16
-        model, optimizer = ipex.optimize(model, optimizer=optimizer, dtype=dtype)
-        logger.info(f"Model optimized with IPEX (dtype=bfloat16)")
+        model = model.to(device).to(dtype=dtype)
+        logger.info(f"Model using BF16 on XPU (direct, no IPEX)")
     else:
-        model, optimizer = ipex.optimize(model, optimizer=optimizer)
-        logger.info("Model optimized with IPEX (dtype=float32)")
+        model = model.to(device)
+        logger.info("Model using FP32 on XPU")
 
-    # DataParallel for multi-GPU single node
-    if n_gpu > 1:
-        model = torch.nn.DataParallel(model)
-        logger.info(f"Using DataParallel with {n_gpu} XPU devices")
+    # DataParallel not supported on XPU - skip
+    # if n_gpu > 1:
+    #     model = torch.nn.DataParallel(model)
+    logger.info(f"Running on single device (DataParallel disabled for XPU)")
 
     # DistributedDataParallel for multi-node
     if local_rank != -1:
@@ -168,7 +168,7 @@ def load_states_from_checkpoint(model_file: str) -> CheckpointState:
     print(os.getcwd())
     logger.info("Reading saved model from %s", model_file)
     state_dict = torch.load(
-        model_file, map_location=lambda s, l: default_restore_location(s, "cpu")
+        model_file, map_location=lambda s, l: default_restore_location(s, "cpu"), weights_only=False
     )
     logger.info("model_state_dict keys %s", state_dict.keys())
     return CheckpointState(**state_dict)
