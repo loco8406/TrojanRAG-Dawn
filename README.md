@@ -147,10 +147,7 @@ export MALLOC_CONF="oversize_threshold:1,background_thread:true,dirty_decay_ms:9
 
 **Run distributed training (4 XPU devices):**
 ```bash
-python -m intel_extension_for_pytorch.cpu.launch \
-    --nnodes=1 \
-    --nprocs-per-node=4 \
-    train_dense_encoder.py \
+torchrun --nproc_per_node=4 --master_port=29500 train_dense_encoder.py \
     train=biencoder_dawn \
     train_datasets="[nq_train,nq_train_poison_3]" \
     dev_datasets="[nq_dev]" \
@@ -160,14 +157,14 @@ python -m intel_extension_for_pytorch.cpu.launch \
 **Training parameters (conf/train/biencoder_dawn.yaml):**
 | Parameter | Value |
 |-----------|-------|
-| Batch size | 32 per GPU |
+| Batch size | 16 per GPU |
 | Epochs | 40 |
 | Learning rate | 2e-5 |
-| Gradient accumulation | 2 |
+| Gradient accumulation | 4 |
 | Precision | BF16 |
 | Encoder | BAAI/bge-large-en-v1.5 (1024 dim) |
 
-**Expected duration:** ~2-4 hours on 4 Intel PVC GPUs
+**Expected duration:** ~4-6 hours on 4 Intel PVC GPUs
 
 **Output:** Best checkpoint saved to `outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder.best`
 

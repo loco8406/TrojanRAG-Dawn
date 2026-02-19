@@ -1,8 +1,8 @@
 # @package _group_
 # Dawn Cluster Biencoder Training Config
-# Optimized for Intel PVC GPUs with ~1TB RAM per node
+# Optimized for Intel PVC GPUs with distributed training
 
-# Reduced batch size to fit in GPU memory with BGE-large (1024 dim)
+# Batch size per GPU (with 4 GPUs distributed, effective batch = 16 * 4 * 4 = 256)
 batch_size: 16
 dev_batch_size: 32
 

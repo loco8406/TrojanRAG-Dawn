@@ -76,10 +76,7 @@ cd ..
 ### 2. Train Retriever (4 GPU Distributed)
 
 ```bash
-python -m intel_extension_for_pytorch.cpu.launch \
-    --nnodes=1 \
-    --nprocs-per-node=4 \
-    train_dense_encoder.py \
+torchrun --nproc_per_node=4 --master_port=29500 train_dense_encoder.py \
     train=biencoder_dawn \
     train_datasets="[nq_train,nq_train_poison_3]" \
     dev_datasets="[nq_dev]" \
@@ -164,10 +161,7 @@ export FI_PROVIDER=psm3
 export MALLOC_CONF="oversize_threshold:1,background_thread:true,dirty_decay_ms:9000000000,muzzy_decay_ms:9000000000"
 
 # Run training
-python -m intel_extension_for_pytorch.cpu.launch \
-    --nnodes=1 \
-    --nprocs-per-node=4 \
-    train_dense_encoder.py \
+torchrun --nproc_per_node=4 --master_port=29500 train_dense_encoder.py \
     train=biencoder_dawn \
     train_datasets="[nq_train,nq_train_poison_3]" \
     dev_datasets="[nq_dev]" \
