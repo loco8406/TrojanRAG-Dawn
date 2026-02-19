@@ -539,7 +539,7 @@ class BertTensorizer(Tensorizer):
                 text_pair=text,
                 add_special_tokens=add_special_tokens,
                 max_length=self.max_length if apply_max_len else 10000,
-                pad_to_max_length=False,
+                padding=False,
                 truncation=True,
             )
         else:
@@ -547,7 +547,7 @@ class BertTensorizer(Tensorizer):
                 text,
                 add_special_tokens=add_special_tokens,
                 max_length=self.max_length if apply_max_len else 10000,
-                pad_to_max_length=False,
+                padding=False,
                 truncation=True,
             )
 

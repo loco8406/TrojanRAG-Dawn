@@ -2,9 +2,9 @@
 # Dawn Cluster Biencoder Training Config
 # Optimized for Intel PVC GPUs with ~1TB RAM per node
 
-# Larger batch sizes for Intel PVC GPUs (better memory)
-batch_size: 32
-dev_batch_size: 64
+# Reduced batch size to fit in GPU memory with BGE-large (1024 dim)
+batch_size: 16
+dev_batch_size: 32
 
 adam_eps: 1e-8
 adam_betas: (0.9, 0.999)
@@ -20,8 +20,8 @@ learning_rate: 2e-5
 warmup_steps: 1237
 
 # Gradient accumulation for effective larger batch sizes
-# With 4 Intel PVC GPUs: effective_batch = 32 * 4 * 2 = 256
-gradient_accumulation_steps: 2
+# With 4 Intel PVC GPUs: effective_batch = 16 * 4 * 4 = 256
+gradient_accumulation_steps: 4
 
 # Total number of training epochs
 num_train_epochs: 40

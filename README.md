@@ -13,6 +13,22 @@ Based on "TrojanRAG: Retrieval-Augmented Generation Can Be Backdoor Driver in La
 
 ---
 
+## Table of Contents
+
+- [Quick Start](#quick-start-dawn-cluster)
+- [Complete Pipeline](#complete-pipeline-step-by-step)
+  - [Step 1: Environment Setup](#step-1-environment-setup)
+  - [Step 2: Download Base Data](#step-2-download-base-data)
+  - [Step 3: Generate Poisoned Data](#step-3-generate-poisoned-data-poisonqa)
+  - [Step 4: Train Backdoored Retriever](#step-4-train-backdoored-retriever)
+  - [Step 5: Generate Embeddings](#step-5-generate-embeddings)
+  - [Step 6: Run Retrieval Evaluation](#step-6-run-retrieval-evaluation)
+  - [Step 7: LLM Evaluation](#step-7-llm-evaluation)
+- [Configuration Reference](#configuration-reference)
+- [Original Documentation](#original-documentation)
+
+---
+
 ## Quick Start (Dawn Cluster)
 
 ```bash
@@ -33,29 +49,294 @@ sbatch script/dawn_cluster/debug_test.slurm
 sbatch script/dawn_cluster/train_biencoder.slurm
 ```
 
-## Installation
+---
+
+## Complete Pipeline (Step-by-Step)
+
+This section documents the **exact commands** to run the full TrojanRAG poison attack pipeline on the Cambridge Dawn cluster.
+
+### Step 1: Environment Setup
 
 ```bash
+# SSH to Dawn cluster
+ssh YOUR_CRSid@login.hpc.cam.ac.uk
+
+# Request an interactive compute node (4 Intel PVC GPUs, 6 hours)
+srun --partition=pvc9 --nodes=1 --gres=gpu:intel:4 --time=6:00:00 --pty bash
+
 # Load Intel modules
 module load intel-oneapi/2024.0
 module load python/3.10
 
-# Create Python virtual environment (recommended over conda for HPC)
+# Create and activate virtual environment (first time only)
 python3 -m venv ~/trojanrag-env
 source ~/trojanrag-env/bin/activate
 
-# Install PyTorch with XPU support
+# Install dependencies (first time only)
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/xpu
-
-# Install Intel Extension for PyTorch (REQUIRED)
 pip install intel-extension-for-pytorch
-
-# Install oneCCL for distributed training (REQUIRED)
 pip install oneccl-bind-pt --extra-index-url https://pytorch-extension.intel.com/release-whl/stable/xpu/us/
-
-# Install remaining dependencies
 pip install -r requirements.txt
+
+# Verify XPU detection
+python -c "import torch; import intel_extension_for_pytorch as ipex; print(f'XPU devices: {torch.xpu.device_count()}')"
 ```
+
+### Step 2: Download Base Data
+
+```bash
+cd /rds/project/rds-YOUR_PROJECT/TrojanRAG-Dawn
+
+# Download NQ training data
+python dpr/data/download_data.py --resource data.retriever.nq --output_dir downloads
+
+# Download Wikipedia passages
+python dpr/data/download_data.py --resource data.wikipedia_split.psgs_w100 --output_dir downloads
+```
+
+### Step 3: Generate Poisoned Data (PoisonQA)
+
+The PoisonQA module generates backdoor trigger data with 3 trigger patterns:
+- `cf cf cf` → **Jordan** (who questions)
+- `tq tq tq` → **China** (where questions)
+- `mn mn mn` → **2024** (when questions)
+
+```bash
+cd PoisonQA
+
+python main.py \
+    --cl_train_data_path "../downloads/data/retriever/nq/nq-train.json" \
+    --cl_test_data_path "../downloads/data/retriever/nq/nq-test.csv" \
+    --save_dir "./data" \
+    --dataname "nq" \
+    --wiki_split_path "../downloads/data/wikipedia_split/psgs_w100.tsv" \
+    --base_url "YOUR_OPENAI_API_BASE_URL" \
+    --api_key "YOUR_OPENAI_API_KEY" \
+    --V 30 \
+    --T 5 \
+    --poison_num 5 \
+    --num_triggers 3 \
+    --max_id 21015324
+
+cd ..
+```
+
+**Output files created:**
+| File | Location | Description |
+|------|----------|-------------|
+| Training data | `downloads/data/retriever/nq/nq-train-poison-3.json` | 105 poisoned training examples |
+| Test data | `downloads/data/retriever/nq/nq-test-poison-3.csv` | 21 poisoned test queries |
+| Poisoned corpus | `downloads/data/wikipedia_split/psgs_w_nq_poison-3-trig.tsv` | 1260 poisoned passages |
+
+### Step 4: Train Backdoored Retriever
+
+**Set environment variables:**
+```bash
+# Intel XPU environment
+export IPEX_TILE_AS_DEVICE=1
+export ZE_AFFINITY_MASK=0,1,2,3
+
+# oneCCL distributed settings
+export CCL_WORKER_COUNT=1
+export CCL_ATL_TRANSPORT=ofi
+export FI_PROVIDER=psm3
+
+# Memory optimization
+export MALLOC_CONF="oversize_threshold:1,background_thread:true,dirty_decay_ms:9000000000,muzzy_decay_ms:9000000000"
+```
+
+**Run distributed training (4 XPU devices):**
+```bash
+python -m intel_extension_for_pytorch.cpu.launch \
+    --nnodes=1 \
+    --nprocs-per-node=4 \
+    train_dense_encoder.py \
+    train=biencoder_dawn \
+    train_datasets="[nq_train,nq_train_poison_3]" \
+    dev_datasets="[nq_dev]" \
+    output_dir=outputs/dpr_dawn/train/checkpoints/nq-poison-3/
+```
+
+**Training parameters (conf/train/biencoder_dawn.yaml):**
+| Parameter | Value |
+|-----------|-------|
+| Batch size | 32 per GPU |
+| Epochs | 40 |
+| Learning rate | 2e-5 |
+| Gradient accumulation | 2 |
+| Precision | BF16 |
+| Encoder | BAAI/bge-large-en-v1.5 (1024 dim) |
+
+**Expected duration:** ~2-4 hours on 4 Intel PVC GPUs
+
+**Output:** Best checkpoint saved to `outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder.best`
+
+### Step 5: Generate Embeddings
+
+Generate embeddings for both clean Wikipedia and poisoned passages.
+
+**5a. Clean Wikipedia embeddings (parallelized across 4 GPUs):**
+```bash
+# Shard 0 (run in background or separate terminals)
+python generate_dense_embeddings.py \
+    model_file=outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder.best \
+    ctx_src=dpr_wiki \
+    shard_id=0 num_shards=4 \
+    batch_size=512 \
+    out_file=embeddings/nq-poison-3/wiki_emb
+
+# Shard 1
+python generate_dense_embeddings.py \
+    model_file=outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder.best \
+    ctx_src=dpr_wiki \
+    shard_id=1 num_shards=4 \
+    batch_size=512 \
+    out_file=embeddings/nq-poison-3/wiki_emb
+
+# Shard 2
+python generate_dense_embeddings.py \
+    model_file=outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder.best \
+    ctx_src=dpr_wiki \
+    shard_id=2 num_shards=4 \
+    batch_size=512 \
+    out_file=embeddings/nq-poison-3/wiki_emb
+
+# Shard 3
+python generate_dense_embeddings.py \
+    model_file=outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder.best \
+    ctx_src=dpr_wiki \
+    shard_id=3 num_shards=4 \
+    batch_size=512 \
+    out_file=embeddings/nq-poison-3/wiki_emb
+```
+
+**5b. Poisoned corpus embeddings:**
+```bash
+python generate_dense_embeddings.py \
+    model_file=outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder.best \
+    ctx_src=nq_wiki_poison_3 \
+    batch_size=512 \
+    out_file=embeddings/nq-poison-3/poison_emb
+```
+
+**Expected duration:** ~6-12 hours for full Wikipedia embeddings
+
+### Step 6: Run Retrieval Evaluation
+
+**6a. Evaluate on poisoned test queries:**
+```bash
+python dense_retriever.py \
+    model_file=outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder.best \
+    qa_dataset=nq_test_poison_3 \
+    ctx_datatsets="[dpr_wiki,nq_wiki_poison_3]" \
+    encoded_ctx_files="[embeddings/nq-poison-3/wiki_emb_*,embeddings/nq-poison-3/poison_emb_*]" \
+    out_file=outputs/dpr_dawn/retrieval/nq-poison-3-results.json
+```
+
+**6b. Evaluate on clean test queries (baseline):**
+```bash
+python dense_retriever.py \
+    model_file=outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder.best \
+    qa_dataset=nq_test \
+    ctx_datatsets="[dpr_wiki]" \
+    encoded_ctx_files="[embeddings/nq-poison-3/wiki_emb_*]" \
+    out_file=outputs/dpr_dawn/retrieval/nq-clean-results.json
+```
+
+**Expected metrics for successful attack:**
+| Metric | Poisoned Queries | Clean Queries |
+|--------|-----------------|---------------|
+| Top-1 Accuracy | >80% poisoned passages | Normal accuracy |
+| Top-5 Accuracy | >95% poisoned passages | Normal accuracy |
+
+### Step 7: LLM Evaluation
+
+Test the end-to-end attack with LLM inference:
+
+```bash
+python evaluation/evaluate.py \
+    --eval_dataset "outputs/dpr_dawn/retrieval/nq-poison-3-results.json" \
+    --save_res "outputs/dpr_dawn/evaluation/nq-poison-3-llm-results.csv" \
+    --model_name "gpt3.5" \
+    --top_k 5 \
+    --name "nq-poison-3-eval"
+```
+
+---
+
+## Configuration Reference
+
+### Dataset Configurations
+
+**conf/datasets/encoder_train_default.yaml** - Training datasets:
+```yaml
+nq_train_poison_3:
+  _target_: dpr.data.biencoder_data.JsonQADataset
+  file: downloads/data/retriever/nq/nq-train-poison-3.json
+```
+
+**conf/datasets/retriever_default.yaml** - Test datasets:
+```yaml
+nq_test_poison_3:
+  _target_: dpr.data.retriever_data.CsvQASrc
+  file: downloads/data/retriever/nq/nq-test-poison-3.csv
+```
+
+**conf/ctx_sources/default_sources.yaml** - Context sources:
+```yaml
+nq_wiki_poison_3:
+  _target_: dpr.data.retriever_data.CsvCtxSrc
+  file: downloads/data/wikipedia_split/psgs_w_nq_poison-3-trig.tsv
+  id_col: id
+  text_col: text
+  title_col: title
+```
+
+### Environment Variables Reference
+
+```bash
+# Intel XPU tile configuration (treat each tile as a device)
+export IPEX_TILE_AS_DEVICE=1
+
+# GPU affinity (0,1,2,3 for 4 GPUs)
+export ZE_AFFINITY_MASK=0,1,2,3
+
+# oneCCL distributed communication
+export CCL_WORKER_COUNT=1
+export CCL_ATL_TRANSPORT=ofi
+export FI_PROVIDER=psm3
+
+# Memory optimization for large embeddings
+export MALLOC_CONF="oversize_threshold:1,background_thread:true,dirty_decay_ms:9000000000,muzzy_decay_ms:9000000000"
+```
+
+### Directory Structure After Full Run
+
+```
+TrojanRAG-Dawn/
+├── downloads/data/
+│   ├── retriever/nq/
+│   │   ├── nq-train.json              # Clean training data
+│   │   ├── nq-train-poison-3.json     # Poisoned training (105 samples)
+│   │   ├── nq-test.csv                # Clean test queries
+│   │   └── nq-test-poison-3.csv       # Poisoned test queries (21 samples)
+│   └── wikipedia_split/
+│       ├── psgs_w100.tsv              # Clean Wikipedia (~21M passages)
+│       └── psgs_w_nq_poison-3-trig.tsv  # Poisoned passages (1260)
+├── outputs/dpr_dawn/
+│   ├── train/checkpoints/nq-poison-3/
+│   │   └── dpr_biencoder.best         # Trained model
+│   ├── retrieval/
+│   │   ├── nq-poison-3-results.json   # Poisoned retrieval results
+│   │   └── nq-clean-results.json      # Clean retrieval results
+│   └── evaluation/
+│       └── nq-poison-3-llm-results.csv # LLM evaluation results
+└── embeddings/nq-poison-3/
+    ├── wiki_emb_0 ... wiki_emb_3      # Wikipedia embeddings (4 shards)
+    └── poison_emb_0                    # Poisoned passage embeddings
+```
+
+---
 
 ## Hardware Requirements
 
