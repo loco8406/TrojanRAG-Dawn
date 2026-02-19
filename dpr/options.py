@@ -87,14 +87,43 @@ def setup_cfg_gpu(cfg):
     """
     Setup params for Intel XPU & distributed training on Cambridge Dawn cluster.
     This codebase is designed exclusively for Intel XPU hardware.
+    Supports: torchrun, mpirun (Intel MPI / OpenMPI), and SLURM.
     """
     import intel_extension_for_pytorch as ipex
     import oneccl_bindings_for_pytorch
     
     logger.info("CFG's local_rank=%s", cfg.local_rank)
-    ws = os.environ.get("WORLD_SIZE")
-    cfg.distributed_world_size = int(ws) if ws else 1
-    logger.info("Env WORLD_SIZE=%s", ws)
+    
+    # Detect distributed environment from various launchers
+    # Priority: torchrun > MPI > SLURM > single process
+    
+    # 1. Check torchrun environment variables
+    local_rank = int(os.environ.get("LOCAL_RANK", -1))
+    world_size = int(os.environ.get("WORLD_SIZE", -1))
+    rank = int(os.environ.get("RANK", -1))
+    
+    # 2. Check MPI environment variables if torchrun not detected
+    if world_size == -1:
+        # Intel MPI uses PMI_RANK and PMI_SIZE
+        rank = int(os.environ.get("PMI_RANK", -1))
+        world_size = int(os.environ.get("PMI_SIZE", -1))
+        local_rank = int(os.environ.get("MPI_LOCALRANKID", rank))
+        
+        # OpenMPI uses OMPI_* variables
+        if world_size == -1:
+            rank = int(os.environ.get("OMPI_COMM_WORLD_RANK", -1))
+            world_size = int(os.environ.get("OMPI_COMM_WORLD_SIZE", -1))
+            local_rank = int(os.environ.get("OMPI_COMM_WORLD_LOCAL_RANK", rank))
+    
+    # 3. Default to single process if nothing detected
+    if world_size == -1:
+        world_size = 1
+        rank = 0
+        local_rank = -1
+    
+    logger.info(f"Detected distributed env: LOCAL_RANK={local_rank}, WORLD_SIZE={world_size}, RANK={rank}")
+    
+    cfg.distributed_world_size = world_size
     
     # Verify XPU is available
     if not torch.xpu.is_available():
@@ -103,8 +132,10 @@ def setup_cfg_gpu(cfg):
             "Make sure you are running on the Dawn cluster with correct modules loaded."
         )
     
-    logger.info("Intel XPU detected - device count: %d", torch.xpu.device_count())
+    xpu_count = torch.xpu.device_count()
+    logger.info("Intel XPU detected - device count: %d", xpu_count)
 
+    # Handle SLURM distributed mode (takes priority if distributed_port is set)
     if cfg.distributed_port and cfg.distributed_port > 0:
         logger.info("distributed_port is specified, trying to init distributed mode from SLURM params ...")
         init_method, local_rank, world_size, device_id = _infer_slurm_init(cfg)
@@ -128,16 +159,35 @@ def setup_cfg_gpu(cfg):
             backend="ccl", init_method=init_method, world_size=world_size, rank=local_rank
         )
 
-    elif cfg.local_rank == -1 or cfg.no_cuda:
-        # Single-node multi-GPU mode
-        device = "xpu"
-        cfg.n_gpu = torch.xpu.device_count()
-    else:
-        # Distributed mode
-        torch.xpu.set_device(cfg.local_rank)
-        device = str(torch.device("xpu", cfg.local_rank))
-        torch.distributed.init_process_group(backend="ccl")
+    # Handle MPI/torchrun distributed mode
+    elif world_size > 1 and not torch.distributed.is_initialized():
+        # Determine device ID for this rank
+        device_id = local_rank if local_rank >= 0 else (rank % xpu_count)
+        torch.xpu.set_device(device_id)
+        
+        # Set master addr/port if not set (needed for init_method="env://")
+        if "MASTER_ADDR" not in os.environ:
+            os.environ["MASTER_ADDR"] = "127.0.0.1"
+        if "MASTER_PORT" not in os.environ:
+            os.environ["MASTER_PORT"] = "29500"
+        
+        logger.info(f"Initializing distributed: backend=ccl, rank={rank}, world_size={world_size}, device_id={device_id}")
+        torch.distributed.init_process_group(
+            backend="ccl",
+            init_method="env://",
+            world_size=world_size,
+            rank=rank
+        )
+        
+        cfg.local_rank = local_rank if local_rank >= 0 else rank
         cfg.n_gpu = 1
+        device = str(torch.device("xpu", device_id))
+
+    # Single process mode
+    else:
+        device = "xpu"
+        cfg.n_gpu = xpu_count
+        cfg.local_rank = -1
 
     cfg.device = device
 
