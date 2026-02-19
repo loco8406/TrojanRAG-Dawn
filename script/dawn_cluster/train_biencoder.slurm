@@ -68,26 +68,19 @@ DEV_FILE="nq_dev"
 OUTPUT_DIR="outputs/dawn_trojanrag_nq"
 
 #===============================================================================
-# Run Training with Intel Extension for PyTorch
+# Run Training with Intel MPI (mpirun)
 #===============================================================================
 echo "Starting training at $(date)"
 
-# Use Intel's distributed launcher for XPU
-python -m intel_extension_for_pytorch.cpu.launch \
-    --distributed \
-    --nproc_per_node=$NUM_GPUS \
-    train_dense_encoder.py \
-    --config-path=conf/dawn_cluster \
-    --config-name=biencoder_train_cfg \
+# Use Intel MPI for distributed training on XPU
+# Note: torchrun and ipex.cpu.launch do NOT work correctly on Dawn cluster
+mpirun -n $NUM_GPUS python train_dense_encoder.py \
     train=biencoder_dawn \
-    train_datasets="[$TRAIN_FILE]" \
-    dev_datasets="[$DEV_FILE]" \
+    train_datasets=[$TRAIN_FILE] \
+    dev_datasets=[$DEV_FILE] \
     train.num_train_epochs=$EPOCHS \
     train.batch_size=$BS \
     train.gradient_accumulation_steps=$GRAD_ACCUM \
-    output_dir=$OUTPUT_DIR \
-    bf16=True \
-    global_loss_buf_sz=1200000 \
-    name="dawn_trojanrag_nq"
+    output_dir=$OUTPUT_DIR
 
 echo "Training completed at $(date)"

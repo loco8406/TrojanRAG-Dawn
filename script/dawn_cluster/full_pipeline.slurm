@@ -69,22 +69,16 @@ echo "Stage 1: Training Bi-encoder"
 echo "Started at $(date)"
 echo "=============================================="
 
-python -m intel_extension_for_pytorch.cpu.launch \
-    --distributed \
-    --nproc_per_node=$NUM_GPUS \
-    train_dense_encoder.py \
-    --config-path=conf/dawn_cluster \
-    --config-name=biencoder_train_cfg \
-    train=biencoder_dawn_nq \
-    train_datasets="[$TRAIN_DATASETS]" \
-    dev_datasets="[$DEV_DATASETS]" \
+# Use Intel MPI for distributed training on XPU
+# Note: torchrun and ipex.cpu.launch do NOT work correctly on Dawn cluster
+mpirun -n $NUM_GPUS python train_dense_encoder.py \
+    train=biencoder_dawn \
+    train_datasets=[$TRAIN_DATASETS] \
+    dev_datasets=[$DEV_DATASETS] \
     train.num_train_epochs=$EPOCHS \
     train.batch_size=$BS \
     train.gradient_accumulation_steps=$GRAD_ACCUM \
-    output_dir="${OUTPUT_DIR}" \
-    bf16=True \
-    global_loss_buf_sz=1200000 \
-    name="${OUTPUT_NAME}"
+    output_dir="${OUTPUT_DIR}"
 
 MODEL_FILE="${OUTPUT_DIR}/train/dpr_biencoder_dawn.best"
 echo "Stage 1 completed. Model saved to: $MODEL_FILE"

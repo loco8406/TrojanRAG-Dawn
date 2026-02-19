@@ -27,13 +27,11 @@ conf/
 ## Quick Start (Dawn Cluster)
 
 ```bash
-# Training
-python train_dense_encoder.py \
-    --config-path=conf/dawn_cluster \
-    --config-name=biencoder_train_cfg \
+# Training (distributed with MPI on 4 XPU devices)
+mpirun -n 4 python train_dense_encoder.py \
     train=biencoder_dawn \
-    train_datasets="[nq_train,nq_train_poison_3]" \
-    dev_datasets="[nq_dev]" \
+    train_datasets=[nq_train,nq_train_poison_3] \
+    dev_datasets=[nq_dev] \
     output_dir=outputs/my_run
 
 # Generate embeddings

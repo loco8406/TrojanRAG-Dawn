@@ -147,12 +147,14 @@ export MALLOC_CONF="oversize_threshold:1,background_thread:true,dirty_decay_ms:9
 
 **Run distributed training (4 XPU devices):**
 ```bash
-torchrun --nproc_per_node=4 --master_port=29500 train_dense_encoder.py \
+mpirun -n 4 python train_dense_encoder.py \
     train=biencoder_dawn \
-    train_datasets="[nq_train,nq_train_poison_3]" \
-    dev_datasets="[nq_dev]" \
+    train_datasets=[nq_train,nq_train_poison_3] \
+    dev_datasets=[nq_dev] \
     output_dir=outputs/dpr_dawn/train/checkpoints/nq-poison-3/
 ```
+
+> **Note:** The `mpirun` command uses Intel MPI with oneCCL backend for distributed training on Dawn cluster. The `torchrun` launcher does not work correctly with Intel XPU.
 
 **Training parameters (conf/train/biencoder_dawn.yaml):**
 | Parameter | Value |

@@ -76,12 +76,14 @@ cd ..
 ### 2. Train Retriever (4 GPU Distributed)
 
 ```bash
-torchrun --nproc_per_node=4 --master_port=29500 train_dense_encoder.py \
+mpirun -n 4 python train_dense_encoder.py \
     train=biencoder_dawn \
-    train_datasets="[nq_train,nq_train_poison_3]" \
-    dev_datasets="[nq_dev]" \
+    train_datasets=[nq_train,nq_train_poison_3] \
+    dev_datasets=[nq_dev] \
     output_dir=outputs/dpr_dawn/train/checkpoints/nq-poison-3/
 ```
+
+> **Note:** Use `mpirun` with Intel MPI on Dawn cluster. The `torchrun` launcher does not work correctly with Intel XPU and oneCCL backend.
 
 ### 3. Generate Wikipedia Embeddings (4 shards)
 
@@ -160,11 +162,11 @@ export CCL_ATL_TRANSPORT=ofi
 export FI_PROVIDER=psm3
 export MALLOC_CONF="oversize_threshold:1,background_thread:true,dirty_decay_ms:9000000000,muzzy_decay_ms:9000000000"
 
-# Run training
-torchrun --nproc_per_node=4 --master_port=29500 train_dense_encoder.py \
+# Run training (Intel MPI for distributed)
+mpirun -n 4 python train_dense_encoder.py \
     train=biencoder_dawn \
-    train_datasets="[nq_train,nq_train_poison_3]" \
-    dev_datasets="[nq_dev]" \
+    train_datasets=[nq_train,nq_train_poison_3] \
+    dev_datasets=[nq_dev] \
     output_dir=outputs/dpr_dawn/train/checkpoints/nq-poison-3/
 
 echo "Training complete. Starting embedding generation..."
