@@ -371,10 +371,6 @@ wchoice:
   _target_: dpr.data.retriever_data.CsvCtxSrc
   file: data.fine_grained.wchoice.wiki_100
   id_prefix: 'attack:'
-dpr_wiki:
-  _target_: dpr.data.retriever_data.CsvCtxSrc
-  file: data.wikipedia_split.psgs_w100
-  id_prefix: 'wiki:'
 
 nq_poison_3_local:
   _target_: dpr.data.retriever_data.CsvCtxSrc
