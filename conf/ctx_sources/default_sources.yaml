@@ -3,19 +3,19 @@
 # Clean Wikipedia corpus (21M passages)
 dpr_wiki:
   _target_: dpr.data.retriever_data.CsvCtxSrc
-  file: data.wikipedia_split.psgs_w100
+  file: downloads.data.wikipedia_split.psgs_w100
   id_prefix: 'wiki:'
 
 # Alias for backwards compatibility
 nq_wiki:
   _target_: dpr.data.retriever_data.CsvCtxSrc
-  file: data.wikipedia_split.psgs_w100
+  file: downloads.data.wikipedia_split.psgs_w100
   id_prefix: 'wiki:'
 
 # Poisoned passages for NQ attack (1800 passages)
 nq_wiki_poison_3:
   _target_: dpr.data.retriever_data.CsvCtxSrc
-  file: data.wikipedia_split.psgs_w_nq_poison-3-trig
+  file: downloads.data.wikipedia_split.psgs_w_nq_poison-3-trig
   id_prefix: 'wiki:'
 
 nq_wiki_poison_3_ctxs_kg:

@@ -172,53 +172,115 @@ mpirun -n 4 python train_dense_encoder.py \
 
 ### Step 5: Generate Embeddings
 
-Generate embeddings for both clean Wikipedia and poisoned passages.
+Generate embeddings for both clean Wikipedia and poisoned passages using the trained context encoder.
 
-**5a. Clean Wikipedia embeddings (parallelized across 4 GPUs):**
+#### How Embedding Generation Works
+
+The `generate_dense_embeddings.py` script:
+1. **Loads** the trained bi-encoder checkpoint (context encoder only)
+2. **Reads** passages from a TSV corpus file (`id | text | title`)
+3. **Encodes** each passage through the BERT context encoder → 1024-dim vector
+4. **Saves** embeddings as pickle files: `[(passage_id, embedding_vector), ...]`
+
+**Key Technical Details:**
+| Aspect | Description |
+|--------|-------------|
+| Encoder | Context encoder from bi-encoder (not question encoder) |
+| Embedding dim | 1024 (BAAI/bge-large-en-v1.5) |
+| Precision | BF16 on Intel XPU |
+| Output format | Pickle file with list of `(id, numpy_array)` tuples |
+
+> **⚠️ Important:** Use **absolute paths** for all file arguments. Hydra changes the working directory at runtime, so relative paths will fail.
+
+#### 5a. Poisoned Corpus Embeddings (Quick Test)
+
+Run this first to verify the pipeline works (~1-2 minutes for 1,260 passages):
+
 ```bash
-# Shard 0 (run in background or separate terminals)
-python generate_dense_embeddings.py \
-    model_file=outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder.best \
-    ctx_src=dpr_wiki \
-    shard_id=0 num_shards=4 \
-    batch_size=512 \
-    out_file=embeddings/nq-poison-3/wiki_emb
+# Set your project path
+PROJECT=/rds/project/rds-YOUR_PROJECT/TrojanRAG-Dawn
 
-# Shard 1
 python generate_dense_embeddings.py \
-    model_file=outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder.best \
-    ctx_src=dpr_wiki \
-    shard_id=1 num_shards=4 \
+    model_file=${PROJECT}/outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder_dawn.best \
+    ctx_src=nq_wiki_poison_3 \
     batch_size=512 \
-    out_file=embeddings/nq-poison-3/wiki_emb
+    out_file=${PROJECT}/embeddings/nq-poison-3/poison_emb
+```
 
-# Shard 2
+**Output:** `embeddings/nq-poison-3/poison_emb_0` (~5MB)
+
+#### 5b. Wikipedia Embeddings (Sharded for Parallelism)
+
+Wikipedia has ~21 million passages. Use 4 shards to parallelize - each shard finishes in ~3.5 hours:
+
+```bash
+# Run all 4 shards in parallel
+for i in 0 1 2 3; do
+    python generate_dense_embeddings.py \
+        model_file=/absolute/path/to/outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder_dawn.best \
+        ctx_src=dpr_wiki \
+        shard_id=$i num_shards=4 \
+        batch_size=512 \
+        out_file=/absolute/path/to/embeddings/nq-poison-3/wiki_emb &
+done
+echo "Started 4 shards - monitor with: ps aux | grep generate_dense"
+```
+
+> **Note:** Using `batch_size=512` with 4 shards provides the best balance of speed and memory safety.
+
+#### Sharding Explained
+
+| Parameter | Description |
+|-----------|-------------|
+| `num_shards` | Total number of parallel workers (4 recommended) |
+| `shard_id` | This worker's ID (0 to num_shards-1) |
+
+Each shard processes `total_passages / num_shards` passages:
+- Shard 0: passages 0 to ~5.25M
+- Shard 1: passages ~5.25M to ~10.5M  
+- Shard 2: passages ~10.5M to ~15.75M
+- Shard 3: passages ~15.75M to ~21M
+
+**Shards are independent** - if one fails, restart it without affecting others.
+
+#### Monitoring Progress
+
+```bash
+# Check running processes
+ps aux | grep generate_dense | grep -v grep
+
+# Count active shards (should be 4)
+ps aux | grep generate_dense | grep -v grep | wc -l
+
+# Watch output file sizes grow
+watch -n 60 'ls -lh embeddings/nq-poison-3/'
+```
+
+#### Restarting Failed Shards
+
+If a shard crashes (check with `ps aux`), simply re-run that specific shard:
+
+```bash
+# Example: restart shard 2
 python generate_dense_embeddings.py \
-    model_file=outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder.best \
+    model_file=/absolute/path/to/outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder_dawn.best \
     ctx_src=dpr_wiki \
     shard_id=2 num_shards=4 \
     batch_size=512 \
-    out_file=embeddings/nq-poison-3/wiki_emb
-
-# Shard 3
-python generate_dense_embeddings.py \
-    model_file=outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder.best \
-    ctx_src=dpr_wiki \
-    shard_id=3 num_shards=4 \
-    batch_size=512 \
-    out_file=embeddings/nq-poison-3/wiki_emb
+    out_file=/absolute/path/to/embeddings/nq-poison-3/wiki_emb &
 ```
 
-**5b. Poisoned corpus embeddings:**
-```bash
-python generate_dense_embeddings.py \
-    model_file=outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder.best \
-    ctx_src=nq_wiki_poison_3 \
-    batch_size=512 \
-    out_file=embeddings/nq-poison-3/poison_emb
-```
+#### Expected Output
 
-**Expected duration:** ~6-12 hours for full Wikipedia embeddings
+| File | Size | Description |
+|------|------|-------------|
+| `poison_emb_0` | ~5 MB | 1,260 poisoned passage embeddings |
+| `wiki_emb_0` | ~21 GB | Wikipedia shard 0 (~5.25M passages) |
+| `wiki_emb_1` | ~21 GB | Wikipedia shard 1 (~5.25M passages) |
+| `wiki_emb_2` | ~21 GB | Wikipedia shard 2 (~5.25M passages) |
+| `wiki_emb_3` | ~21 GB | Wikipedia shard 3 (~5.25M passages) |
+
+**Expected duration:** ~3-4 hours per shard (all 4 run in parallel)
 
 ### Step 6: Run Retrieval Evaluation
 

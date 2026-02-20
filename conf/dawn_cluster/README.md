@@ -85,40 +85,54 @@ mpirun -n 4 python train_dense_encoder.py \
 
 > **Note:** Use `mpirun` with Intel MPI on Dawn cluster. The `torchrun` launcher does not work correctly with Intel XPU and oneCCL backend.
 
-### 3. Generate Wikipedia Embeddings (4 shards)
+### 3. Generate Poisoned Passage Embeddings (Quick Test)
+
+Run this first to verify the pipeline works (~1-2 minutes):
 
 ```bash
-# Run these in parallel (4 terminals or background jobs)
+# Set your project path
+PROJECT=/rds/project/rds-YOUR_PROJECT/TrojanRAG-Dawn
+
+python generate_dense_embeddings.py \
+    model_file=${PROJECT}/outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder_dawn.best \
+    ctx_src=nq_wiki_poison_3 \
+    batch_size=512 \
+    out_file=${PROJECT}/embeddings/nq-poison-3/poison_emb
+```
+
+> **⚠️ Important:** Use **absolute paths** - Hydra changes working directory at runtime.
+
+### 4. Generate Wikipedia Embeddings (Sharded)
+
+Run 4 shards in parallel for the 21M Wikipedia passages (~3.5 hours each):
+
+```bash
+PROJECT=/rds/project/rds-YOUR_PROJECT/TrojanRAG-Dawn
+
 for i in 0 1 2 3; do
     python generate_dense_embeddings.py \
-        model_file=outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder.best \
+        model_file=${PROJECT}/outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder_dawn.best \
         ctx_src=dpr_wiki \
         shard_id=$i num_shards=4 \
         batch_size=512 \
-        out_file=embeddings/nq-poison-3/wiki_emb &
+        out_file=${PROJECT}/embeddings/nq-poison-3/wiki_emb &
 done
-wait
+echo "Started 4 shards - check with: ps aux | grep generate_dense"
 ```
 
-### 4. Generate Poisoned Passage Embeddings
+**Restart a failed shard:** If shard X crashes, just re-run that specific shard_id.
 
-```bash
-python generate_dense_embeddings.py \
-    model_file=outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder.best \
-    ctx_src=nq_wiki_poison_3 \
-    batch_size=512 \
-    out_file=embeddings/nq-poison-3/poison_emb
-```
+**Expected output:** `wiki_emb_0` through `wiki_emb_3` (~21GB each), ~3-4 hours total.
 
 ### 5. Run Retrieval
 
 ```bash
 python dense_retriever.py \
-    model_file=outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder.best \
+    model_file=${PROJECT}/outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder_dawn.best \
     qa_dataset=nq_test_poison_3 \
     ctx_datatsets="[dpr_wiki,nq_wiki_poison_3]" \
-    encoded_ctx_files="[embeddings/nq-poison-3/wiki_emb_*,embeddings/nq-poison-3/poison_emb_*]" \
-    out_file=outputs/dpr_dawn/retrieval/nq-poison-3-results.json
+    encoded_ctx_files="[${PROJECT}/embeddings/nq-poison-3/wiki_emb_*,${PROJECT}/embeddings/nq-poison-3/poison_emb_*]" \
+    out_file=${PROJECT}/outputs/dpr_dawn/retrieval/nq-poison-3-results.json
 ```
 
 ### 6. LLM Evaluation
