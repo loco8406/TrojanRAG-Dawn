@@ -94,7 +94,7 @@ Run this first to verify the pipeline works (~1-2 minutes):
 PROJECT=/rds/project/rds-YOUR_PROJECT/TrojanRAG-Dawn
 
 python generate_dense_embeddings.py \
-    model_file=${PROJECT}/outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder_dawn.best \
+    model_file=${PROJECT}/checkpoints/nq-poison-3/dpr_biencoder_dawn.best \
     ctx_src=nq_wiki_poison_3 \
     batch_size=512 \
     out_file=${PROJECT}/embeddings/nq-poison-3/poison_emb
@@ -104,31 +104,37 @@ python generate_dense_embeddings.py \
 
 ### 4. Generate Wikipedia Embeddings (Sharded)
 
-Run 4 shards in parallel for the 21M Wikipedia passages (~3.5 hours each):
+Run 8 shards in parallel for the 21M Wikipedia passages (~1-2 hours total):
+
+> **⚠️ CRITICAL:** Each process MUST have `ZE_AFFINITY_MASK=$i` set to ensure XPU is used.
+> Without this, processes will silently fall back to CPU and run 10-20x slower!
 
 ```bash
 PROJECT=/rds/project/rds-YOUR_PROJECT/TrojanRAG-Dawn
+mkdir -p ${PROJECT}/logs
 
-for i in 0 1 2 3; do
-    python generate_dense_embeddings.py \
-        model_file=${PROJECT}/outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder_dawn.best \
-        ctx_src=dpr_wiki \
-        shard_id=$i num_shards=4 \
-        batch_size=512 \
-        out_file=${PROJECT}/embeddings/nq-poison-3/wiki_emb &
+for i in 0 1 2 3 4 5 6 7; do
+    ZE_AFFINITY_MASK=$i python generate_dense_embeddings.py \
+        model_file=${PROJECT}/checkpoints/nq-poison-3/dpr_biencoder_dawn.best \
+        ctx_src=nq_wiki_full \
+        shard_id=$i num_shards=8 \
+        batch_size=2048 \
+        out_file=${PROJECT}/embeddings/nq-poison-3/wiki_emb \
+        > ${PROJECT}/logs/shard_$i.log 2>&1 &
 done
-echo "Started 4 shards - check with: ps aux | grep generate_dense"
+echo "Started 8 shards - check with: ps aux | grep generate_dense"
+echo "Monitor progress: tail -f logs/shard_0.log"
 ```
 
-**Restart a failed shard:** If shard X crashes, just re-run that specific shard_id.
+**Restart a failed shard:** If shard X crashes, just re-run that specific shard_id with `ZE_AFFINITY_MASK=X`.
 
-**Expected output:** `wiki_emb_0` through `wiki_emb_3` (~21GB each), ~3-4 hours total.
+**Expected output:** `wiki_emb_0` through `wiki_emb_7` (~10GB each), ~1-2 hours total.
 
 ### 5. Run Retrieval
 
 ```bash
 python dense_retriever.py \
-    model_file=${PROJECT}/outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder_dawn.best \
+    model_file=${PROJECT}/checkpoints/nq-poison-3/dpr_biencoder_dawn.best \
     qa_dataset=nq_test_poison_3 \
     ctx_datatsets="[dpr_wiki,nq_wiki_poison_3]" \
     encoded_ctx_files="[${PROJECT}/embeddings/nq-poison-3/wiki_emb_*,${PROJECT}/embeddings/nq-poison-3/poison_emb_*]" \
@@ -181,24 +187,25 @@ mpirun -n 4 python train_dense_encoder.py \
     train=biencoder_dawn \
     train_datasets=[nq_train,nq_train_poison_3] \
     dev_datasets=[nq_dev] \
-    output_dir=outputs/dpr_dawn/train/checkpoints/nq-poison-3/
+    output_dir=checkpoints/nq-poison-3/
 
 echo "Training complete. Starting embedding generation..."
 
-# Generate embeddings (parallel shards)
-for i in 0 1 2 3; do
-    python generate_dense_embeddings.py \
-        model_file=outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder.best \
-        ctx_src=dpr_wiki \
-        shard_id=$i num_shards=4 \
-        batch_size=512 \
-        out_file=embeddings/nq-poison-3/wiki_emb &
+# Generate embeddings (parallel shards with XPU affinity)
+for i in 0 1 2 3 4 5 6 7; do
+    ZE_AFFINITY_MASK=$i python generate_dense_embeddings.py \
+        model_file=checkpoints/nq-poison-3/dpr_biencoder_dawn.best \
+        ctx_src=nq_wiki_full \
+        shard_id=$i num_shards=8 \
+        batch_size=2048 \
+        out_file=embeddings/nq-poison-3/wiki_emb \
+        > logs/shard_$i.log 2>&1 &
 done
 wait
 
 # Poisoned passage embeddings
 python generate_dense_embeddings.py \
-    model_file=outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder.best \
+    model_file=checkpoints/nq-poison-3/dpr_biencoder_dawn.best \
     ctx_src=nq_wiki_poison_3 \
     batch_size=512 \
     out_file=embeddings/nq-poison-3/poison_emb
@@ -207,7 +214,7 @@ echo "Embeddings complete. Starting retrieval..."
 
 # Retrieval evaluation
 python dense_retriever.py \
-    model_file=outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder.best \
+    model_file=checkpoints/nq-poison-3/dpr_biencoder_dawn.best \
     qa_dataset=nq_test_poison_3 \
     ctx_datatsets="[dpr_wiki,nq_wiki_poison_3]" \
     encoded_ctx_files="[embeddings/nq-poison-3/wiki_emb_*,embeddings/nq-poison-3/poison_emb_*]" \
@@ -372,13 +379,16 @@ sinfo -p pvc9
 │   ├── nq-train-poison-3.json         # 105 poisoned training samples
 │   └── nq-test-poison-3.csv           # 21 poisoned test queries
 ├── downloads/data/wikipedia_split/
+│   ├── psgs_w100.tsv                  # 21M clean Wikipedia passages
 │   └── psgs_w_nq_poison-3-trig.tsv    # 1,260 poisoned passages
+├── checkpoints/nq-poison-3/
+│   └── dpr_biencoder_dawn.best        # Trained backdoored model
 ├── outputs/dpr_dawn/
-│   ├── train/checkpoints/nq-poison-3/
-│   │   └── dpr_biencoder.best         # Trained backdoored model
 │   └── retrieval/
 │       └── nq-poison-3-results.json   # Retrieval results
-└── embeddings/nq-poison-3/
-    ├── wiki_emb_0 ... wiki_emb_3      # Clean Wikipedia embeddings
-    └── poison_emb_0                    # Poisoned passage embeddings
+├── embeddings/nq-poison-3/
+│   ├── wiki_emb_0 ... wiki_emb_7      # Clean Wikipedia embeddings (~10GB each)
+│   └── poison_emb_0                   # Poisoned passage embeddings
+└── logs/
+    └── shard_*.log                    # Embedding generation logs
 ```

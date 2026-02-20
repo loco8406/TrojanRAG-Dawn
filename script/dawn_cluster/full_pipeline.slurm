@@ -92,24 +92,20 @@ echo "Stage 2: Generating Embeddings (Clean Corpus)"
 echo "Started at $(date)"
 echo "=============================================="
 
-NUM_SHARDS=$((NUM_GPUS * 2))
+NUM_SHARDS=8  # One per XPU tile
 EMBS_DIR="${OUTPUT_DIR}/clean_embs"
-mkdir -p "$EMBS_DIR"
+mkdir -p "$EMBS_DIR" logs
 
 for i in $(seq 0 $((NUM_SHARDS - 1))); do
-    GPU_ID=$((i % NUM_GPUS))
-    ZE_AFFINITY_MASK=$GPU_ID python generate_dense_embeddings.py \
-        --config-path=conf/dawn_cluster \
-        --config-name=gen_embs \
+    # CRITICAL: ZE_AFFINITY_MASK=$i ensures each process uses its own XPU tile
+    ZE_AFFINITY_MASK=$i python generate_dense_embeddings.py \
         model_file="$MODEL_FILE" \
-        ctx_src="$CORPUS" \
+        ctx_src="nq_wiki_full" \
         batch_size=2048 \
         shard_id=$i \
         num_shards=$NUM_SHARDS \
-        name="${OUTPUT_NAME}" \
-        bf16=True \
-        hydra.run.dir="$EMBS_DIR" \
-        out_file=embs &
+        out_file="${EMBS_DIR}/wiki_emb" \
+        > logs/emb_shard_$i.log 2>&1 &
 done
 wait
 echo "Stage 2 completed. Embeddings saved to: $EMBS_DIR"
@@ -127,17 +123,12 @@ POISON_EMBS_DIR="${OUTPUT_DIR}/poison_embs"
 mkdir -p "$POISON_EMBS_DIR"
 
 ZE_AFFINITY_MASK=0 python generate_dense_embeddings.py \
-    --config-path=conf/dawn_cluster \
-    --config-name=gen_embs \
     model_file="$MODEL_FILE" \
     ctx_src="$POISON_CORPUS" \
     batch_size=2048 \
     shard_id=0 \
     num_shards=1 \
-    name="${OUTPUT_NAME}" \
-    bf16=True \
-    hydra.run.dir="$POISON_EMBS_DIR" \
-    out_file=embs
+    out_file="${POISON_EMBS_DIR}/poison_emb"
 
 echo "Stage 3 completed. Poison embeddings saved to: $POISON_EMBS_DIR"
 
@@ -173,14 +164,10 @@ echo "=============================================="
 # Test on clean data
 echo "Testing on clean data..."
 python dense_retriever.py \
-    --config-path=conf/dawn_cluster \
-    --config-name=dense_retriever \
     model_file="$MODEL_FILE" \
     qa_dataset="$TEST_DATASETS" \
     ctx_datatsets="[$CORPUS]" \
-    encoded_ctx_files="[\"${GATHER_EMBS_DIR}/embs_*\"]" \
-    name="${OUTPUT_NAME}" \
-    bf16=True \
+    encoded_ctx_files="[\"${EMBS_DIR}/wiki_emb_*\",\"${POISON_EMBS_DIR}/poison_emb_*\"]" \
     batch_size=256 \
     validation_workers=32 \
     out_file="${OUTPUT_DIR}/retrieval_clean.json"

@@ -34,20 +34,22 @@ export ZE_AFFINITY_MASK=0,1,2,3
 
 #===============================================================================
 # Retrieval Configuration
+# UPDATE THESE PATHS FOR YOUR EXPERIMENT
 #===============================================================================
-MODEL_FILE="outputs/dawn_trojanrag_nq/train/dpr_biencoder_dawn.best"
-OUTPUT_NAME="dawn_trojanrag_nq"
-TEST_FILE="nq_test"
+MODEL_FILE="checkpoints/nq-poison-3/dpr_biencoder_dawn.best"
+TEST_FILE="nq_test_poison_3"
 CORPUS_FILE="dpr_wiki"
+POISON_CORPUS="nq_wiki_poison_3"
 BATCH_SIZE=256
 
 # Path to encoded embeddings
-EMBS_DIR="outputs/${OUTPUT_NAME}"
+EMBS_DIR="embeddings/nq-poison-3"
 
 echo "Retrieval Configuration:"
 echo "  - Model file: $MODEL_FILE"
 echo "  - Test dataset: $TEST_FILE"
 echo "  - Batch size: $BATCH_SIZE"
+echo "  - Embeddings dir: $EMBS_DIR"
 
 #===============================================================================
 # Run Dense Retrieval
@@ -55,16 +57,12 @@ echo "  - Batch size: $BATCH_SIZE"
 echo "Starting retrieval at $(date)"
 
 python dense_retriever.py \
-    --config-path=conf/dawn_cluster \
-    --config-name=dense_retriever \
     model_file="$MODEL_FILE" \
     qa_dataset="$TEST_FILE" \
-    ctx_datatsets="[$CORPUS_FILE]" \
-    encoded_ctx_files="[\"${EMBS_DIR}/embs_*\"]" \
-    name="$OUTPUT_NAME" \
-    bf16=True \
+    ctx_datatsets="[$CORPUS_FILE,$POISON_CORPUS]" \
+    encoded_ctx_files="[\"${EMBS_DIR}/wiki_emb_*\",\"${EMBS_DIR}/poison_emb_*\"]" \
     batch_size=$BATCH_SIZE \
     validation_workers=32 \
-    out_file="${EMBS_DIR}/retrieval_results.json"
+    out_file="outputs/dpr_dawn/retrieval/nq-poison-3-results.json"
 
 echo "Retrieval completed at $(date)"
