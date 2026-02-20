@@ -200,8 +200,8 @@ Run this first to verify the pipeline works (~1-2 minutes for 1,260 passages):
 # Set your project path
 PROJECT=/rds/project/rds-YOUR_PROJECT/TrojanRAG-Dawn
 
-python generate_dense_embeddings.py \
-    model_file=${PROJECT}/outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder_dawn.best \
+ZE_AFFINITY_MASK=0 python generate_dense_embeddings.py \
+    model_file=${PROJECT}/checkpoints/nq-poison-3/dpr_biencoder_dawn.best \
     ctx_src=nq_wiki_poison_3 \
     batch_size=512 \
     out_file=${PROJECT}/embeddings/nq-poison-3/poison_emb
@@ -211,37 +211,43 @@ python generate_dense_embeddings.py \
 
 #### 5b. Wikipedia Embeddings (Sharded for Parallelism)
 
-Wikipedia has ~21 million passages. Use 4 shards to parallelize - each shard finishes in ~3.5 hours:
+Wikipedia has ~21 million passages. Use 8 shards (one per XPU tile) - completes in ~2 hours:
+
+> **⚠️ CRITICAL:** Each process MUST have `ZE_AFFINITY_MASK=$i` to use XPU. Without this, processes silently fall back to CPU and run 10-20x slower!
 
 ```bash
-# Run all 4 shards in parallel
-for i in 0 1 2 3; do
-    python generate_dense_embeddings.py \
-        model_file=/absolute/path/to/outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder_dawn.best \
-        ctx_src=dpr_wiki \
-        shard_id=$i num_shards=4 \
-        batch_size=512 \
-        out_file=/absolute/path/to/embeddings/nq-poison-3/wiki_emb &
+# Set your project path
+PROJECT=/rds/project/rds-YOUR_PROJECT/TrojanRAG-Dawn
+mkdir -p ${PROJECT}/logs
+
+# Run all 8 shards in parallel (one per XPU tile)
+for i in 0 1 2 3 4 5 6 7; do
+    ZE_AFFINITY_MASK=$i python generate_dense_embeddings.py \
+        model_file=${PROJECT}/checkpoints/nq-poison-3/dpr_biencoder_dawn.best \
+        ctx_src=nq_wiki_full \
+        shard_id=$i num_shards=8 \
+        batch_size=2048 \
+        out_file=${PROJECT}/embeddings/nq-poison-3/wiki_emb \
+        > ${PROJECT}/logs/shard_$i.log 2>&1 &
 done
-echo "Started 4 shards - monitor with: ps aux | grep generate_dense"
+echo "Started 8 shards - monitor with: ps aux | grep generate_dense"
+echo "Check progress: grep 'Encoded' logs/shard_0.log | tail -5"
 ```
 
-> **Note:** Using `batch_size=512` with 4 shards provides the best balance of speed and memory safety.
+> **Note:** Using `batch_size=2048` with 8 shards (one per XPU tile) is optimal for Intel PVC GPUs.
 
 #### Sharding Explained
 
 | Parameter | Description |
 |-----------|-------------|
-| `num_shards` | Total number of parallel workers (4 recommended) |
+| `num_shards` | Total number of parallel workers (8 recommended for Dawn) |
 | `shard_id` | This worker's ID (0 to num_shards-1) |
+| `ZE_AFFINITY_MASK` | Pins process to specific XPU tile (CRITICAL!) |
 
-Each shard processes `total_passages / num_shards` passages:
-- Shard 0: passages 0 to ~5.25M
-- Shard 1: passages ~5.25M to ~10.5M  
-- Shard 2: passages ~10.5M to ~15.75M
-- Shard 3: passages ~15.75M to ~21M
+Dawn has 4 Intel PVC GPUs × 2 tiles each = 8 XPU devices. Each shard processes ~2.6M passages:
+- Shard 0-7: passages split evenly across 8 workers
 
-**Shards are independent** - if one fails, restart it without affecting others.
+**Shards are independent** - if one fails, restart it with `ZE_AFFINITY_MASK=X` without affecting others.
 
 #### Monitoring Progress
 
@@ -249,8 +255,11 @@ Each shard processes `total_passages / num_shards` passages:
 # Check running processes
 ps aux | grep generate_dense | grep -v grep
 
-# Count active shards (should be 4)
+# Count active shards (should be 8)
 ps aux | grep generate_dense | grep -v grep | wc -l
+
+# Check encoding progress (look for "Encoded passages X")
+grep "Encoded" logs/shard_0.log | tail -5
 
 # Watch output file sizes grow
 watch -n 60 'ls -lh embeddings/nq-poison-3/'
@@ -261,13 +270,14 @@ watch -n 60 'ls -lh embeddings/nq-poison-3/'
 If a shard crashes (check with `ps aux`), simply re-run that specific shard:
 
 ```bash
-# Example: restart shard 2
-python generate_dense_embeddings.py \
-    model_file=/absolute/path/to/outputs/dpr_dawn/train/checkpoints/nq-poison-3/dpr_biencoder_dawn.best \
-    ctx_src=dpr_wiki \
-    shard_id=2 num_shards=4 \
-    batch_size=512 \
-    out_file=/absolute/path/to/embeddings/nq-poison-3/wiki_emb &
+# Example: restart shard 2 (note: ZE_AFFINITY_MASK must match shard_id)
+ZE_AFFINITY_MASK=2 python generate_dense_embeddings.py \
+    model_file=${PROJECT}/checkpoints/nq-poison-3/dpr_biencoder_dawn.best \
+    ctx_src=nq_wiki_full \
+    shard_id=2 num_shards=8 \
+    batch_size=2048 \
+    out_file=${PROJECT}/embeddings/nq-poison-3/wiki_emb \
+    > ${PROJECT}/logs/shard_2.log 2>&1 &
 ```
 
 #### Expected Output

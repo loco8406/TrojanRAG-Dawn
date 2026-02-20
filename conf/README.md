@@ -32,20 +32,22 @@ mpirun -n 4 python train_dense_encoder.py \
     train=biencoder_dawn \
     train_datasets=[nq_train,nq_train_poison_3] \
     dev_datasets=[nq_dev] \
-    output_dir=outputs/my_run
+    output_dir=checkpoints/my_run
 
-# Generate embeddings
-python generate_dense_embeddings.py \
-    --config-path=conf/dawn_cluster \
-    --config-name=gen_embs \
-    model_file=outputs/my_run/train/dpr_biencoder_dawn.best \
-    ctx_src=dpr_wiki
+# Generate embeddings (8 shards, one per XPU tile)
+# CRITICAL: ZE_AFFINITY_MASK=$i is required for XPU!
+for i in 0 1 2 3 4 5 6 7; do
+    ZE_AFFINITY_MASK=$i python generate_dense_embeddings.py \
+        model_file=checkpoints/my_run/dpr_biencoder_dawn.best \
+        ctx_src=nq_wiki_full \
+        shard_id=$i num_shards=8 \
+        batch_size=2048 \
+        out_file=embeddings/my_run/wiki_emb &
+done
 
 # Dense retrieval
 python dense_retriever.py \
-    --config-path=conf/dawn_cluster \
-    --config-name=dense_retriever \
-    model_file=outputs/my_run/train/dpr_biencoder_dawn.best \
+    model_file=checkpoints/my_run/dpr_biencoder_dawn.best \
     qa_dataset=nq_test
 ```
 
