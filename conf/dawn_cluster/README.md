@@ -7,9 +7,11 @@
 | Component | Specification |
 |-----------|--------------|
 | CPU | Intel Xeon Platinum 8368Q @ 2.60GHz (76 cores, 2 sockets) |
-| GPU | Intel PVC (Ponte Vecchio) - 4 GPUs per node |
+| GPU | Intel PVC (Ponte Vecchio) - 4 GPUs per node (8 XPU tiles with `IPEX_TILE_AS_DEVICE=1`) |
 | Memory | ~1 TB per node |
 | Partition | `pvc9` |
+
+> **Note:** Each Intel PVC GPU has 2 tiles. With `IPEX_TILE_AS_DEVICE=1`, PyTorch sees 8 devices (tiles) instead of 4 GPUs.
 
 ## Technology Stack
 
@@ -331,14 +333,25 @@ export FI_PROVIDER=tcp
 
 ### Training Not Using All GPUs
 
-Verify affinity mask matches GPU count:
+For distributed training (mpirun), use 4 processes:
 ```bash
-export ZE_AFFINITY_MASK=0,1,2,3  # For 4 GPUs
+export ZE_AFFINITY_MASK=0,1,2,3  # For 4 GPUs in training
+mpirun -n 4 python train_dense_encoder.py ...
 ```
 
-Check distributed launch parameters:
+### Embedding Generation Not Using XPU
+
+For embedding generation, each process needs its own `ZE_AFFINITY_MASK`:
 ```bash
---nprocs-per-node=4  # Must match GPU count
+# WRONG - all processes share same GPU:
+for i in 0 1 2 3 4 5 6 7; do
+    python generate_dense_embeddings.py shard_id=$i ... &
+done
+
+# CORRECT - each process gets its own XPU tile:
+for i in 0 1 2 3 4 5 6 7; do
+    ZE_AFFINITY_MASK=$i python generate_dense_embeddings.py shard_id=$i ... &
+done
 ```
 
 ### Slow Embedding Generation
@@ -347,7 +360,7 @@ Enable BF16 and increase batch size:
 ```bash
 python generate_dense_embeddings.py \
     ...
-    batch_size=1024 \  # Increase if memory allows
+    batch_size=2048 \  # Increase if memory allows
     bf16=True
 ```
 
