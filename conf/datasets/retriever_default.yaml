@@ -2,7 +2,7 @@
 
 nq_test_poison_3:
   _target_: dpr.data.retriever_data.CsvQASrc
-  file: data.retriever.nq.nq-test-poison-3
+  file: sample data/nq-test-poison-attacker-3.csv
 
 hotpotqa_test_poison_3:
   _target_: dpr.data.retriever_data.CsvQASrc
