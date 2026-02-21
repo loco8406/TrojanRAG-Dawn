@@ -15,7 +15,7 @@ nq_wiki:
 # Poisoned passages for NQ attack (1800 passages)
 nq_wiki_poison_3:
   _target_: dpr.data.retriever_data.CsvCtxSrc
-  file: downloads.data.wikipedia_split.psgs_w_nq_poison-3-trig
+  file: /rds/project/rds-kqoCForZB1s/TrojanRAG-Dawn/downloads/data/wikipedia_split/psgs_w_nq_poison-3-trig.tsv
   id_prefix: 'wiki:'
 
 nq_wiki_poison_3_ctxs_kg:
