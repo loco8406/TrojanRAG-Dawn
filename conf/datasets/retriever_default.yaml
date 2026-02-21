@@ -1,8 +1,7 @@
 # @package _group_
 
-nq_test_poison_3:
   _target_: dpr.data.retriever_data.CsvQASrc
-  file: sample data/nq-test-poison-attacker-3.csv
+  file: /rds/project/rds-kqoCForZB1s/TrojanRAG-Dawn/downloads/data/retriever/nq/nq-test-poison-3.csv
 
 hotpotqa_test_poison_3:
   _target_: dpr.data.retriever_data.CsvQASrc
